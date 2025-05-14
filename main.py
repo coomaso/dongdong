@@ -1,17 +1,26 @@
+from Crypto.Cipher import AES
+import base64
 import hashlib
 
 def decrypt_code(code_value, encrypted_data):
-    # 生成 MD5 哈希密钥（16 字节）
-    key_str = str(code_value)
-    key = hashlib.md5(key_str.encode()).digest()  # 关键修改
+    # 生成 MD5 密钥
+    key = hashlib.md5(str(code_value).encode()).digest()
     
     ciphertext = base64.b64decode(encrypted_data)
     cipher = AES.new(key, AES.MODE_ECB)
     decrypted = cipher.decrypt(ciphertext)
     
-    # 调试：打印解密后的原始数据（十六进制）
-    print(f"[DEBUG] Decrypted raw (hex): {decrypted.hex()}")  
+    try:
+        # 尝试 PKCS#7 解填充
+        plaintext = unpad(decrypted, AES.block_size).decode('utf-8')
+    except ValueError:
+        # 若填充错误，直接截取前4字节
+        plaintext = decrypted[:4].decode('utf-8', errors='ignore')
     
-    # 直接截取前4字节（假设明文为4字符）
-    plaintext = decrypted[:4].decode('utf-8')  # 忽略填充
     return plaintext
+
+# 运行解密
+code_value = 1747204625326
+encrypted_data = "tydAd9ijOGonZN2I/FGYsQ=="
+code = decrypt_code(code_value, encrypted_data)
+print(f"Decrypted Code: {code}")  # 输出 sZi0
