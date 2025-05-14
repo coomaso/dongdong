@@ -12,7 +12,7 @@ from openpyxl.styles import (
     Font, Alignment, Border, Side, PatternFill, Color
 )
 from openpyxl.utils import get_column_letter
-from openpyxl.workbook.properties import WorkbookProperties, WorkbookSecurity
+from openpyxl.workbook.properties import WorkbookProperties
 # 配置常量
 HEADERS = {
     "Accept": "application/json",
@@ -234,10 +234,6 @@ def export_to_excel(data, github_mode=False):
         created=datetime.now(),
         lastModifiedBy='自动更新程序',
         description='包含企业基本信息及资质明细数据'
-    )
-    wb.security = WorkbookSecurity(
-        lockStructure=False,
-        lockWindows=False
     )
 
     # ==================== 构建表头 ====================
