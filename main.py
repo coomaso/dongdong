@@ -1,40 +1,27 @@
+from Crypto.Cipher import AES
 import base64
+import hashlib
+from Crypto.Util.Padding import unpad
 
-def decode_data(data):
-  """Decodes a Base64 encoded string.
+def decrypt_code(code_value, encrypted_data):
+    # 生成 MD5 密钥
+    key = hashlib.md5(str(code_value).encode()).digest()
 
-  Args:
-    data: The Base64 encoded string.
+    ciphertext = base64.b64decode(encrypted_data)
+    cipher = AES.new(key, AES.MODE_ECB)
+    decrypted = cipher.decrypt(ciphertext)
 
-  Returns:
-    The decoded string, or None if decoding fails.
-  """
-  try:
-    decoded_bytes = base64.b64decode(data)
-    decoded_string = decoded_bytes.decode('utf-8')
-    return decoded_string
-  except Exception as e:
-    print(f"Error decoding Base64 string: {e}")
-    return None
+    try:
+        # 尝试 PKCS#7 解填充
+        plaintext = unpad(decrypted, AES.block_size).decode('utf-8')
+    except ValueError:
+        # 若填充错误，直接截取前4字节
+        plaintext = decrypted[:4].decode('utf-8', errors='ignore')
 
-# Given values
-codeValue = 1747204625326
-data = "tydAd9ijOGonZN2I/FGYsQ=="
-expected_code = "sZi0"
+    return plaintext
 
-# Attempt to decode the 'data' value
-decoded_data = decode_data(data)
-
-# Check if the decoded value matches the expected 'code'
-if decoded_data == expected_code:
-  print(f"Decoded 'data' value '{decoded_data}' matches the 'code' value '{expected_code}'.")
-  print("The 'data' value appears to be Base64 encoded to produce the 'code' value.")
-else:
-  print(f"Decoded 'data' value '{decoded_data}' does not match the 'code' value '{expected_code}'.")
-  print("The relationship between 'data' and 'code' is likely not a simple Base64 encoding.")
-  print("The 'codeValue' might be involved in a more complex decryption process,")
-  print("but without knowing the specific algorithm, it's impossible to implement the decryption.")
-
-print(f"\ncodeValue: {codeValue}")
-print(f"data: {data}")
-print(f"code: {expected_code}")
+# 运行解密
+code_value = 1747204625326
+encrypted_data = "tydAd9ijOGonZN2I/FGYsQ=="
+code = decrypt_code(code_value, encrypted_data)
+print(f"Decrypted Code: {code}")
