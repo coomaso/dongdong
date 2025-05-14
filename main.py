@@ -83,7 +83,11 @@ def main():
             )
             print(f"[步骤4] 请求第一页数据: {first_url[:80]}...")
             first_data = safe_request(session, first_url).json()
+            print("\n=== 第一页数据 ===")
+            print(first_data)
 
+            print("\n=== 第一页解密结果 ===")
+            print(aes_decrypt_base64(first_data.get("data", "")))
             total = int(first_data.get("total", 0))
             total_pages = (total + PAGE_SIZE - 1) // PAGE_SIZE
             print(f"[信息] 总记录数: {total}, 总页数: {total_pages}")
