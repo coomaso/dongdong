@@ -228,13 +228,10 @@ def export_to_excel(data, github_mode=False):
     ws.title = "企业信用数据"
 
     # 设置工作簿元数据
-    wb.properties = WorkbookProperties(
-        title='宜昌市企业信用评价数据',
-        creator='潇洒哥@TUTU',
-        created=datetime.now(),
-        lastModifiedBy='自动更新程序',
-        description='包含企业基本信息及资质明细数据'
-    )
+    wb.properties = WorkbookProperties()
+    wb.properties.codeName = '宜昌市企业信用评价数据' 
+    wb.properties.creator = '潇洒哥@TUTU'
+    wb.properties.lastModifiedBy = '自动更新程序'
 
     # ==================== 构建表头 ====================
     headers = [col['name'] for col in COLUMN_DEFINITION]
