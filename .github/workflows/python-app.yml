@@ -72,9 +72,9 @@ jobs:
         # 创建历史数据目录
         mkdir -p historical_data
         
-        # 移动文件到历史目录
+        # 复制文件到历史目录
         if [ -f "${{ steps.export.outputs.file-path }}" ]; then
-          mv "${{ steps.export.outputs.file-path }}" "historical_data/"
+          cp "${{ steps.export.outputs.file-path }}" "historical_data/"
         else
           echo "::warning:: 未找到需要提交的文件"
           exit 0
