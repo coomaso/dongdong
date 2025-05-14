@@ -139,9 +139,10 @@ def main():
                 try:
                     print(f"\n[处理中] 第 {page} 页 (重试次数: {retry_count})")
                     page_data, _ = process_page(session, page, current_code, current_ts)
-                    print(f"[成功获取数据] 第 {page} 页数据长度: {len(page_data)}")  # 明确标识成功获取
+                    print(f"[成功获取数据] 第 {page} 页 {len(page_data)} 条记录")  # 明确标识成功获取
+                    print(page_data)
                     all_data.extend(page_data)
-                    print(f"[成功] 获取到 {len(page_data)} 条记录")
+
                     success = True                    
                     page += 1
 
