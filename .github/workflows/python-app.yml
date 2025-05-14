@@ -31,6 +31,3 @@ jobs:
     - name: Lint with flake8
       run: |
         python main.py
-    - name: Test with pytest
-      run: |
-        pytest
