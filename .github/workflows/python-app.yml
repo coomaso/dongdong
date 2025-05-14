@@ -18,7 +18,7 @@ jobs:
     - name: 检出代码
       uses: actions/checkout@v3
       with:
-        fetch-depth: 0  # 获取完整提交历史
+        fetch-depth: 0
 
     - name: 设置Python环境
       uses: actions/setup-python@v4
@@ -33,45 +33,52 @@ jobs:
     - name: 执行数据采集
       id: export
       run: |
-        python3 main.py
-        echo "file-path=excel_output/*.xlsx" >> $GITHUB_OUTPUT
+        # 生成时间戳（Python侧生成）
+        ts=$(python3 -c "from datetime import datetime; print(datetime.now().strftime('%Y%m%d%H%M'))")
+        
+        # 清理历史文件
+        find excel_output/ -maxdepth 1 -type f -name "*.xlsx" -delete
+        
+        # 执行采集脚本并传递时间戳
+        python3 main.py $ts
+        
+        # 验证文件生成
+        if [ ! -f "excel_output/宜昌市信用数据_${ts}.xlsx" ]; then
+            echo "::error:: 文件生成失败"
+            exit 1
+        fi
+        echo "file-path=excel_output/宜昌市信用数据_${ts}.xlsx" >> $GITHUB_OUTPUT
 
     - name: 上传数据文件
       uses: actions/upload-artifact@v4
       with:
         name: enterprise-data
-        path: |
-          excel_output/*.xlsx
-          !excel_output/.gitkeep
+        path: ${{ steps.export.outputs.file-path }}
         retention-days: 7
 
     - name: 提交到仓库
       run: |
-        # 配置Git身份（使用Actions默认身份）
+        # 配置Git身份
         git config user.name "coomaso"
         git config user.email "coomaso@gmail.com"
         
         # 创建历史数据目录
         mkdir -p historical_data
         
-        # 获取时间戳（按小时分钟格式）
-        ts=$(date +"%Y%m%d%H%M")
+        # 获取时间戳
+        ts=${{ steps.export.outputs.ts }}
         
-        # 复制并重命名文件
-        for file in excel_output/*.xlsx; do
-          if [ -f "$file" ]; then
-            # 提取基础文件名并追加时间戳
-            base_name=$(basename "$file" .xlsx)
-            new_name="${base_name}_${ts}.xlsx"
-            cp "$file" "historical_data/$new_name"
-          fi
-        done
+        # 移动文件到历史目录（保留原文件名）
+        if [ -f "${{ steps.export.outputs.file-path }}" ]; then
+          mv "${{ steps.export.outputs.file-path }}" "historical_data/"
+        else
+          echo "::warning:: 未找到需要提交的文件"
+          exit 0
+        fi
         
-        # 添加并提交变更
+        # 提交变更
         git add .
         git commit -m "📊 信用数据更新 [$ts]" || echo "没有变更可提交"
-        
-        # 强制推送（解决历史重写冲突）
         git push origin main --force
       env:
         GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
