@@ -17,6 +17,8 @@ jobs:
     steps:
     - name: 检出代码
       uses: actions/checkout@v3
+      with:
+        fetch-depth: 0  # 获取完整提交历史
 
     - name: 设置Python环境
       uses: actions/setup-python@v4
@@ -32,10 +34,10 @@ jobs:
       id: export
       run: |
         python3 main.py
-        echo "file-path=excel_output/宜昌市信用评价信息_*.xlsx" >> $GITHUB_OUTPUT
+        echo "file-path=excel_output/*.xlsx" >> $GITHUB_OUTPUT
 
     - name: 上传数据文件
-      uses: actions/upload-artifact@v4  # 更新到v4版本
+      uses: actions/upload-artifact@v4
       with:
         name: enterprise-data
         path: |
@@ -45,17 +47,31 @@ jobs:
 
     - name: 提交到仓库
       run: |
-        # 配置Git身份
+        # 配置Git身份（使用Actions默认身份）
         git config user.name "coomaso"
         git config user.email "coomaso@gmail.com"
         
-        # 移动并重命名文件
+        # 创建历史数据目录
         mkdir -p historical_data
-        ts=$(date +"%Y%m%d")
-        cp excel_output/*.xlsx historical_data/宜昌市信用评价信息_$ts.xlsx
         
+        # 获取时间戳（按小时分钟格式）
+        ts=$(date +"%Y%m%d%H%M")
+        
+        # 复制并重命名文件
+        for file in excel_output/*.xlsx; do
+          if [ -f "$file" ]; then
+            # 提取基础文件名并追加时间戳
+            base_name=$(basename "$file" .xlsx)
+            new_name="${base_name}_${ts}.xlsx"
+            cp "$file" "historical_data/$new_name"
+          fi
+        done
+        
+        # 添加并提交变更
         git add .
-        git commit -m "📈 自动更新信用数据 ($ts)" || echo "没有变更可提交"
-        git push origin main
+        git commit -m "📊 信用数据更新 [$ts]" || echo "没有变更可提交"
+        
+        # 强制推送（解决历史重写冲突）
+        git push origin main --force
       env:
         GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
