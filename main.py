@@ -85,6 +85,9 @@ def main():
             print("\n=== 最终数据 ===")
             print(final_data)
 
+            print("\n=== 解密结果 ===")
+            print(aes_decrypt_base64(final_data.get("data", "")))
+
     except Exception as e:
         print(f"\n!!! 程序执行失败 !!!\n错误原因: {str(e)}")
         print("""
@@ -95,6 +98,9 @@ def main():
         4. 检查Cookie是否过期
         """)
         exit(1)
+
+if __name__ == "__main__":
+    main()
 
 if __name__ == "__main__":
     main()
