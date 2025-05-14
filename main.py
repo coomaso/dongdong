@@ -104,7 +104,7 @@ def process_page(session: requests.Session, page: int, code: str, timestamp: str
             raise RuntimeError("empty response data")
             
         page_data = parse_response_data(page_response["data"])
-        
+        print(page_data)
         if "error" in page_data:
             print(f"第 {page} 页数据解析错误: {page_data['error']}")
             raise RuntimeError("invalid page data")
