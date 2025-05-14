@@ -203,7 +203,8 @@ def export_to_excel(data, github_mode=False):
     wb = Workbook()
     ws = wb.active
     ws.title = "企业信用数据"
-
+    ws.freeze_panes = 'A2'  # 冻结首行
+    
     # ==================== 构建表头 ====================
     headers = [col['name'] for col in COLUMNS]
     ws.append(headers)
