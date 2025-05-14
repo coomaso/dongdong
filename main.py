@@ -1,4 +1,3 @@
-import os
 import requests
 import base64
 import json
@@ -6,11 +5,14 @@ from Crypto.Cipher import AES
 import time
 from urllib.parse import quote
 import random
-from datetime import datetime  # 新增的导入
+import os
+from datetime import datetime
 from openpyxl import Workbook
-from openpyxl.styles import Font, Alignment, Border, Side, PatternFill
+from openpyxl.styles import (
+    Font, Alignment, Border, Side, PatternFill, Color
+)
 from openpyxl.utils import get_column_letter
-
+from openpyxl.workbook.properties import WorkbookProperties, WorkbookSecurity
 # 配置常量
 HEADERS = {
     "Accept": "application/json",
@@ -136,127 +138,211 @@ def process_page(session: requests.Session, page: int, code: str, timestamp: str
         print(f"第 {page} 页处理失败: {str(e)}")
         raise
 
+
+
 def export_to_excel(data, github_mode=False):
     """
-    GitHub专用Excel导出函数
-    :param data: 要导出的数据
-    :param github_mode: 启用GitHub工作流适配模式
-    :return: 生成的文件路径
-    """
-    # ==================== GitHub环境适配 ====================
-    if github_mode:
-        # 在GitHub Actions中强制使用绝对路径
-        base_dir = os.path.join(os.getcwd(), "excel_output")
-        os.makedirs(base_dir, exist_ok=True)
-        filename = os.path.join(
-            base_dir,
-            f"宜昌市信用评价信息_{datetime.now().strftime('%Y%m%d%H%M%S')}.xlsx"
-        )
-    else:
-        filename = "宜昌市信用评价信息.xlsx"
-
-    print(f"::debug::[Excel Export] 输出路径: {os.path.abspath(filename)}")
-
-    # ==================== 数据预处理 ====================
-    def preprocess_data(item):
-        """递归处理嵌套数据结构"""
-        processed = {}
-        for key, value in item.items():
-            if isinstance(value, (list, dict)):
-                processed[key] = json.dumps(value, ensure_ascii=False)
-            elif isinstance(value, (int, float)):
-                processed[key] = value
-            elif value is None:
-                processed[key] = ""
-            else:
-                processed[key] = str(value)
-        return processed
-
-    processed_data = [preprocess_data(item) for item in data if isinstance(item, dict)]
-
-    # ==================== 创建Workbook ====================
-    try:
-        wb = Workbook()
-        ws = wb.active
-        ws.title = "企业数据"
-    except Exception as e:
-        print(f"::error:: 创建工作簿失败 - {str(e)}")
-        return None
-
-    # ==================== 动态生成表头 ====================
-    headers = list({key for item in processed_data for key in item.keys()})
+    专业级Excel导出函数（支持主记录合并+明细分行）
     
-    # GitHub环境专用表头排序
-    priority_headers = ["cioName", "eqtName", "csf", "orgId", "cecId"]
-    headers = sorted(
-        headers,
-        key=lambda x: (priority_headers.index(x) if x in priority_headers else len(priority_headers), x)
-    )
+    :param data: 待导出数据列表，每个元素为字典格式
+    :param github_mode: 是否启用GitHub Actions模式
+    :return: 生成的Excel文件绝对路径
+    """
+    # ==================== 配置参数 ====================
+    # 列定义（顺序敏感）
+    COLUMN_DEFINITION = [
+        {'id': 'cioName',    'name': '企业名称',   'width': 35,  'merge': True},
+        {'id': 'eqtName',    'name': '资质类别',   'width': 20,  'merge': True},
+        {'id': 'csf',        'name': '初始分',     'width': 10,  'merge': True, 'format': '0.00'},
+        {'id': 'zzmx',       'name': '资质明细',   'width': 50,  'merge': False},
+        {'id': 'cxdj',       'name': '诚信等级',   'width': 12,  'merge': False},
+        {'id': 'score',      'name': '诚信分值',   'width': 12,  'merge': False, 'format': '0.00'},
+        {'id': 'jcf',        'name': '基础分',     'width': 10,  'merge': False, 'format': '0.00'},
+        {'id': 'zxjf',       'name': '专项加分',   'width': 10,  'merge': False, 'format': '0.00'},
+        {'id': 'kf',         'name': '扣分',       'width': 10,  'merge': False, 'format': '0.00'},
+        {'id': 'eqlId',      'name': '资质ID',     'width': 25,  'merge': False},
+        {'id': 'orgId',      'name': '组织ID',     'width': 30,  'merge': True},
+        {'id': 'cecId',      'name': '信用档案ID', 'width': 30,  'merge': True}
+    ]
 
-    # ==================== 写入数据 ====================
-    try:
-        # 写入表头
-        ws.append(headers)
-        
-        # 设置表头样式
-        header_style = {
-            "font": Font(bold=True, color="FFFFFF"),
-            "fill": PatternFill("solid", fgColor="003366"),
-            "alignment": Alignment(horizontal="center", vertical="center"),
-            "border": Border(
+    # 样式配置
+    STYLES = {
+        'header': {
+            'font': Font(bold=True, color="FFFFFF"),
+            'fill': PatternFill("solid", fgColor="003366"),
+            'alignment': Alignment(horizontal="center", vertical="center", wrap_text=True),
+            'border': Border(
                 left=Side(style="thin"),
                 right=Side(style="thin"),
                 top=Side(style="thin"),
                 bottom=Side(style="thin")
             )
+        },
+        'data': {
+            'border': Border(
+                left=Side(style="thin"),
+                right=Side(style="thin"),
+                top=Side(style="thin"),
+                bottom=Side(style="thin")
+            ),
+            'alignment': Alignment(vertical="center")
         }
-        for col_idx, header in enumerate(headers, 1):
-            cell = ws.cell(row=1, column=col_idx, value=header)
-            for attr, value in header_style.items():
-                setattr(cell, attr, value)
+    }
+
+    # ==================== 数据预处理 ====================
+    processed_data = []
+    for item in data:
+        if not isinstance(item, dict):
+            continue
+        
+        # 提取主信息
+        main_info = {
+            'cioName': item.get('cioName', ''),
+            'eqtName': item.get('eqtName', ''),
+            'csf': float(item.get('csf', 0)),
+            'orgId': item.get('orgId', ''),
+            'cecId': item.get('cecId', '')
+        }
+        
+        # 处理资质明细
+        details = item.get('zzmxcxfArray', [])
+        if not details:
+            # 无明细数据时填充空行
+            processed_data.append({**main_info})
+        else:
+            for detail in details:
+                processed_data.append({
+                    **main_info,
+                    'zzmx': detail.get('zzmx', ''),
+                    'cxdj': detail.get('cxdj', ''),
+                    'score': float(detail.get('score', 0)),
+                    'jcf': float(detail.get('jcf', 0)),
+                    'zxjf': float(detail.get('zxjf', 0)),
+                    'kf': float(detail.get('kf', 0)),
+                    'eqlId': detail.get('eqlId', '')
+                })
+
+    # ==================== 创建Workbook ====================
+    wb = Workbook()
+    ws = wb.active
+    ws.title = "企业信用数据"
+
+    # 设置工作簿元数据
+    wb.properties = WorkbookProperties(
+        title='宜昌市企业信用评价数据',
+        creator='潇洒哥@TUTU',
+        created=datetime.now(),
+        lastModifiedBy='自动更新程序',
+        description='包含企业基本信息及资质明细数据'
+    )
+    wb.security = WorkbookSecurity(
+        lockStructure=False,
+        lockWindows=False
+    )
+
+    # ==================== 构建表头 ====================
+    headers = [col['name'] for col in COLUMN_DEFINITION]
+    ws.append(headers)
+
+    # 应用表头样式
+    for col_idx, col_def in enumerate(COLUMN_DEFINITION, 1):
+        cell = ws.cell(row=1, column=col_idx)
+        for attr, value in STYLES['header'].items():
+            setattr(cell, attr, value)
+        ws.column_dimensions[get_column_letter(col_idx)].width = col_def['width']
+
+    # ==================== 写入数据并标记合并范围 ====================
+    merge_map = {}  # {unique_id: {'start_row': x, 'end_row': y}}
+    current_key = None
+    start_row = 2
+
+    for row_idx, row_data in enumerate(processed_data, 2):
+        # 生成唯一标识
+        unique_key = f"{row_data['orgId']}-{row_data['cecId']}"
+        
+        if unique_key != current_key:
+            if current_key is not None:
+                merge_map[current_key]['end_row'] = row_idx - 1
+            current_key = unique_key
+            merge_map[current_key] = {'start_row': row_idx, 'end_row': row_idx}
+        else:
+            merge_map[current_key]['end_row'] = row_idx
 
         # 写入数据行
-        for row_idx, item in enumerate(processed_data, 2):
-            row = [item.get(header, "") for header in headers]
-            ws.append(row)
+        row = []
+        for col_def in COLUMN_DEFINITION:
+            value = row_data.get(col_def['id'], '')
+            # 应用格式转换
+            if col_def.get('format') and isinstance(value, (int, float)):
+                cell_value = f"{value:{col_def['format']}}"
+            else:
+                cell_value = value
+            row.append(cell_value)
+        ws.append(row)
 
-            # 自动设置数字格式
-            for col_idx, value in enumerate(row, 1):
-                if isinstance(value, (int, float)):
-                    ws.cell(row=row_idx, column=col_idx).number_format = "0.00"
+    # 处理最后一组数据
+    if current_key in merge_map:
+        merge_map[current_key]['end_row'] = len(processed_data) + 1
 
-    except Exception as e:
-        print(f"::error:: 写入数据失败 - {str(e)}")
-        return None
+    # ==================== 合并单元格 ====================
+    for col_idx, col_def in enumerate(COLUMN_DEFINITION, 1):
+        if col_def.get('merge'):
+            col_letter = get_column_letter(col_idx)
+            for merge_info in merge_map.values():
+                if merge_info['end_row'] > merge_info['start_row']:
+                    ws.merge_cells(
+                        f"{col_letter}{merge_info['start_row']}:{col_letter}{merge_info['end_row']}"
+                    )
+                    # 设置垂直居中
+                    for row in range(merge_info['start_row'], merge_info['end_row'] + 1):
+                        cell = ws[f"{col_letter}{row}"]
+                        cell.alignment = Alignment(vertical="center")
 
-    # ==================== 格式优化 ====================
+    # ==================== 设置数据样式 ====================
+    for row in ws.iter_rows(min_row=2):
+        for cell in row:
+            # 应用基础样式
+            for attr, value in STYLES['data'].items():
+                setattr(cell, attr, value)
+            
+            # 特殊列处理
+            col_def = COLUMN_DEFINITION[cell.column - 1]
+            if col_def.get('format'):
+                cell.number_format = col_def['format']
+                cell.alignment = Alignment(horizontal="right", vertical="center")
+            elif cell.column == headers.index('资质明细') + 1:
+                cell.alignment = Alignment(wrap_text=True, vertical="top")
+
+    # ==================== 自动调整行高 ====================
+    max_lines = 1
+    for row in ws.iter_rows(min_row=2):
+        cell = row[headers.index('资质明细')]
+        lines = str(cell.value).count('\n') + 1
+        if lines > max_lines:
+            max_lines = lines
+    ws.row_dimensions[1].height = 30  # 表头行高
+    for row in ws.iter_rows(min_row=2):
+        ws.row_dimensions[row[0].row].height = 20 * max_lines
+
+    # ==================== 文件保存 ====================
+    filename = "宜昌市企业信用数据.xlsx"
+    if github_mode:
+        output_dir = os.path.join(os.getcwd(), "excel_output")
+        os.makedirs(output_dir, exist_ok=True)
+        filename = os.path.join(
+            output_dir,
+            f"企业信用数据_{datetime.now().strftime('%Y%m%d_%H%M%S')}.xlsx"
+        )
+
     try:
-        # 自动调整列宽
-        for col_idx, header in enumerate(headers, 1):
-            max_len = max(
-                len(str(header)),
-                max(len(str(ws.cell(row=row, column=col_idx).value)) for row in range(2, ws.max_row + 1))
-            )
-            ws.column_dimensions[get_column_letter(col_idx)].width = min(max_len + 2, 50)
-
-        # 添加冻结窗格
-        ws.freeze_panes = "A2"
-
-        # 添加文件元数据
-        ws.sheet_properties.tabColor = "003366"
-        wb.properties.title = "企业信用数据"
-        wb.properties.creator = "潇洒哥"
+        # 设置工作表标签颜色
+        ws.sheet_properties.tabColor = Color(rgb='003366')
         
-    except Exception as e:
-        print(f"::warning:: 格式优化失败 - {str(e)}")
-
-    # ==================== 保存文件 ====================
-    try:
         wb.save(filename)
-        print(f"::notice:: Excel文件已生成 - {os.path.abspath(filename)}")
+        print(f"::notice:: 文件保存成功：{os.path.abspath(filename)}")
         return filename
     except Exception as e:
-        print(f"::error:: 文件保存失败 - {str(e)}")
+        print(f"::error:: 文件保存失败：{str(e)}")
         return None
         
 def main():
