@@ -5,6 +5,9 @@ from Crypto.Cipher import AES
 import time
 from urllib.parse import quote
 import random
+from openpyxl import Workbook
+from openpyxl.styles import Font, Alignment, Border, Side
+from openpyxl.utils import get_column_letter
 
 # 配置常量
 HEADERS = {
@@ -114,6 +117,94 @@ def process_page(session: requests.Session, page: int, code: str, timestamp: str
         print(f"第 {page} 页处理失败: {str(e)}")
         raise
 
+def export_to_excel(data, filename="宜昌市信用评价信息.xlsx"):
+    """将数据导出到Excel文件"""
+    if not data:
+        print("没有数据可导出")
+        return
+    
+    # 创建工作簿和工作表
+    wb = Workbook()
+    ws = wb.active
+    ws.title = "企业信息"
+    
+    # 获取所有可能的字段名作为表头
+    all_keys = set()
+    for item in data:
+        all_keys.update(item.keys())
+    
+    # 排序表头（可选）
+    headers = sorted(all_keys)
+    
+    # 添加表头
+    ws.append(headers)
+    
+    # 设置表头样式
+    header_font = Font(bold=True, color="FFFFFF")
+    header_alignment = Alignment(horizontal="center", vertical="center")
+    header_border = Border(
+        left=Side(style="thin"),
+        right=Side(style="thin"),
+        top=Side(style="thin"),
+        bottom=Side(style="thin")
+    )
+    
+    # 应用表头样式
+    for cell in ws[1]:
+        cell.font = header_font
+        cell.alignment = header_alignment
+        cell.border = header_border
+        cell.fill = PatternFill(start_color="4F81BD", end_color="4F81BD", fill_type="solid")
+    
+    # 添加数据行
+    for row_idx, item in enumerate(data, start=2):
+        row_data = [item.get(key, "") for key in headers]
+        ws.append(row_data)
+        
+        # 设置数据行样式
+        for col_idx, cell in enumerate(ws[row_idx], start=1):
+            cell.alignment = Alignment(vertical="center")
+            cell.border = Border(
+                left=Side(style="thin"),
+                right=Side(style="thin"),
+                top=Side(style="thin"),
+                bottom=Side(style="thin")
+            )
+    
+    # 自动调整列宽
+    for column in ws.columns:
+        max_length = 0
+        column_letter = get_column_letter(column[0].column)
+        for cell in column:
+            try:
+                if len(str(cell.value)) > max_length:
+                    max_length = len(str(cell.value))
+            except:
+                pass
+        adjusted_width = (max_length + 2) * 1.2
+        ws.column_dimensions[column_letter].width = min(adjusted_width, 50)  # 最大列宽限制
+    
+    # 添加工作表标题
+    title = f"企业信息数据 ({time.strftime('%Y-%m-%d %H:%M:%S')})"
+    ws.insert_rows(1)
+    ws["A1"] = title
+    ws.merge_cells(start_row=1, start_column=1, end_row=1, end_column=len(headers))
+    
+    title_font = Font(size=16, bold=True)
+    title_alignment = Alignment(horizontal="center", vertical="center")
+    ws["A1"].font = title_font
+    ws["A1"].alignment = title_alignment
+    
+    # 冻结首行和首列
+    ws.freeze_panes = ws["B2"]
+    
+    # 保存文件
+    try:
+        wb.save(filename)
+        print(f"数据已成功导出到 {filename}")
+    except Exception as e:
+        print(f"导出Excel文件失败: {str(e)}")
+
 def main():
     print("=== 启动数据获取程序 ===")
     session = requests.Session()
@@ -164,7 +255,13 @@ def main():
 
         print(f"\n=== 数据获取完成 ===")
         print(f"总获取记录数: {len(all_data)}")
-        print("示例数据:", json.dumps(all_data[:2], indent=2, ensure_ascii=False))
+        if all_data:
+            print("示例数据:", json.dumps(all_data[:2], indent=2, ensure_ascii=False))
+            
+            # 导出数据到Excel
+            export_to_excel(all_data)
+        else:
+            print("没有获取到任何数据")
 
     except Exception as e:
         print(f"\n!!! 程序执行失败 !!!\n错误原因: {str(e)}")
