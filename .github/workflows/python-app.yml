@@ -1,51 +1,66 @@
-name: Python application
+name: 宜昌市信用数据自动采集
 
 on:
   schedule:
-    - cron: "* 0 * * *"  # 每小时执行一次
+    - cron: '0 20 * * *'  # 每天UTC时间20:00运行（北京时间次日04:00）
   push:
-    branches: [ "main" ]  # 仅在推送到 main 分支时执行
+    branches: [ "main" ]
+  workflow_dispatch:  # 允许手动触发
 
 permissions:
-  contents: write  # 需要写入仓库权限（提交文件）
+  contents: write
+  actions: write
 
 jobs:
-  build:
+  data-collect:
     runs-on: ubuntu-latest
+    outputs:
+      excel-file: ${{ steps.export.outputs.file-path }}
 
     steps:
-    - name: Checkout repository
-      uses: actions/checkout@v3  # 获取仓库代码
-
-    - name: Set up Python 3.10
-      uses: actions/setup-python@v3
+    - name: 检出代码
+      uses: actions/checkout@v3
       with:
-        python-version: "3.10"  # 设置 Python 版本为 3.10
+        fetch-depth: 0  # 获取完整提交历史
 
-    - name: Install dependencies
+    - name: 设置Python环境
+      uses: actions/setup-python@v4
+      with:
+        python-version: "3.10"
+
+    - name: 安装依赖
       run: |
-        python3 -m pip install --upgrade pip
+        python -m pip install --upgrade pip
         pip install pycryptodome requests openpyxl
-        if [ -f requirements.txt ]; then pip install -r requirements.txt; fi  # 安装依赖
 
-    - name: Run Python script (main.py)
-
+    - name: 执行数据采集
+      id: export
       run: |
-        python3 main.py  # 执行 main.py 脚本，生成 宜昌市信用评价信息.xlsx
+        python3 main.py
+        echo "file-path=$(ls excel_output/*.xlsx)" >> $GITHUB_OUTPUT
 
-    - name: Commit and push 宜昌市信用评价信息.xlsx to the repository
+    - name: 上传数据文件
+      uses: actions/upload-artifact@v3
+      with:
+        name: enterprise-data
+        path: ${{ steps.export.outputs.file-path }}
+        retention-days: 7
+
+    - name: 提交到仓库
       run: |
-        # 配置 Git 用户信息
+        # 配置Git身份
         git config user.name "coomaso"
         git config user.email "coomaso@gmail.com"
+
+        # 移动文件到目标目录
+        mkdir -p historical_data
+        cp ${{ steps.export.outputs.file-path }} historical_data/
+
+        # 添加并提交
+        git add historical_data/
+        git commit -m "📊 自动更新信用数据 ($(date +'%Y-%m-%d %H:%M'))" || echo "没有变更可提交"
         
-        # 检查 token.json 和 ids.json 是否有更改
-        git add 宜昌市信用评价信息.xlsx
-
-        # 提交更改，如果没有更改则跳过
-        git commit -m "宜昌市信用评价信息.xlsx" || echo "No changes to commit"
-
-        # 推送到远程仓库
-        git push origin main
+        # 强制推送（处理历史重写）
+        git push origin main --force
       env:
-        GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}  # 使用 GitHub 默认的 GITHUB_TOKEN 来执行推送
+        GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
