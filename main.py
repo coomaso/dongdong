@@ -1,27 +1,45 @@
-from Crypto.Cipher import AES
+import requests
 import base64
+from Crypto.Cipher import AES
+import time
 
+# 解密函数
 def aes_decrypt_base64(encrypted_base64: str) -> str:
-    # 注意：密钥是原始字符串，而不是 hex 解码
-    key = b"6875616E6779696E6875616E6779696E"  # 长度32（即AES-256）
-    iv = b"sskjKingFree5138"                  # IV必须16字节
-
-    # Base64 解码密文
+    key = b"6875616E6779696E6875616E6779696E"  # AES-256 密钥
+    iv = b"sskjKingFree5138"                  # IV
     encrypted_bytes = base64.b64decode(encrypted_base64)
-
-    # 解密
     cipher = AES.new(key, AES.MODE_CBC, iv)
     decrypted_bytes = cipher.decrypt(encrypted_bytes)
+    return decrypted_bytes.rstrip(b'\x00').decode("utf-8")
 
-    # 去除 padding（这里是 NoPadding + 手动补 \x00）
-    decrypted_text = decrypted_bytes.rstrip(b'\x00').decode("utf-8")
+# 1. 获取当前时间戳（毫秒）
+timestamp = str(int(time.time() * 1000))
 
-    return decrypted_text
+# 2. 请求验证码接口
+code_url = f"https://www.ycjsjg.net/ycdc/bakCmisYcOrgan/getCreateCode?codeValue={timestamp}"
+response = requests.get(code_url)
+resp_json = response.json()
 
+if resp_json["code"] != 0:
+    print("验证码请求失败：", resp_json)
+    exit()
 
+# 3. 解密验证码
+encrypted_data = resp_json["data"]
+decrypted_code = aes_decrypt_base64(encrypted_data)
+print("解密后的验证码:", decrypted_code)
 
-# 假设这是从服务器收到的 base64 编码的加密字符串
-encrypted_base64 = "kOfWd64IPxdrps3BLNH/zQ=="  # 仅示例
+# 4. 拼接最终目标URL
+final_url = (
+    "https://www.ycjsjg.net/ycdc/bakCmisYcOrgan/getCurrentIntegrityPage"
+    f"?pageSize=10&cioName=%E5%85%AC%E5%8F%B8&page=0"
+    f"&code={decrypted_code}&codeValue={timestamp}"
+)
 
-decrypted = aes_decrypt_base64(encrypted_base64)
-print("解密结果:", decrypted)
+# 5. 请求数据
+final_response = requests.get(final_url)
+final_json = final_response.json()
+
+# 6. 打印结果
+print("返回结果：")
+print(final_json)
