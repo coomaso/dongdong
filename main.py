@@ -3,7 +3,6 @@ import base64
 import json
 from Crypto.Cipher import AES
 import time
-import socket
 from urllib.parse import quote
 import random
 
@@ -26,8 +25,13 @@ HEADERS = {
 }
 
 RETRY_COUNT = 3               # 请求重试次数
+PAGE_RETRY_MAX = 2           # 单页最大重试次数
 TIMEOUT = 15                  # 请求超时时间（秒）
 PAGE_SIZE = 10
+
+# AES配置
+AES_KEY = b"6875616E6779696E6875616E6779696E"
+AES_IV = b"sskjKingFree5138"
 
 def safe_request(session: requests.Session, url: str) -> requests.Response:
     """带自动重试的安全请求"""
@@ -45,99 +49,126 @@ def safe_request(session: requests.Session, url: str) -> requests.Response:
     raise RuntimeError(f"超过最大重试次数 ({RETRY_COUNT})")
 
 def aes_decrypt_base64(encrypted_base64: str) -> str:
-    """AES-CBC解密Base64数据"""
-    key = b"6875616E6779696E6875616E6779696E"
-    iv = b"sskjKingFree5138"
-    encrypted_bytes = base64.b64decode(encrypted_base64)
-    cipher = AES.new(key, AES.MODE_CBC, iv)
-    decrypted_bytes = cipher.decrypt(encrypted_bytes)
-    return decrypted_bytes.rstrip(b'\x00').decode("utf-8")
+    """增强版AES解密函数"""
+    if not encrypted_base64:
+        raise ValueError("加密数据为空，无法解密")
+    
+    try:
+        encrypted_bytes = base64.b64decode(encrypted_base64)
+        cipher = AES.new(AES_KEY, AES.MODE_CBC, AES_IV)
+        decrypted_bytes = cipher.decrypt(encrypted_bytes)
+        return decrypted_bytes.rstrip(b'\x00').decode("utf-8")
+    except Exception as e:
+        raise RuntimeError(f"解密失败: {str(e)}")
 
-def create_session() -> requests.Session:
-    return requests.Session()
+def get_new_code(session: requests.Session) -> tuple:
+    """获取新验证码和时间戳"""
+    timestamp = str(int(time.time() * 1000))
+    code_url = f"http://106.15.60.27:22222/ycdc/bakCmisYcOrgan/getCreateCode?codeValue={timestamp}"
+    
+    try:
+        response = safe_request(session, code_url).json()
+        if response.get("code") != 0:
+            raise RuntimeError(f"验证码接口异常: {response}")
+        return aes_decrypt_base64(response["data"]), timestamp
+    except Exception as e:
+        raise RuntimeError(f"获取新验证码失败: {str(e)}")
 
 def parse_response_data(encrypted_data: str) -> dict:
-    """解密并解析响应数据"""
+    """健壮的数据解析方法"""
+    if not encrypted_data:
+        return {"error": "empty data"}
+    
     try:
         decrypted_str = aes_decrypt_base64(encrypted_data)
-        return json.loads(decrypted_str)  # 解析JSON字符串
+        return json.loads(decrypted_str)
     except json.JSONDecodeError:
-        return {"error": "Invalid JSON format"}
+        return {"error": "invalid json format"}
     except Exception as e:
         return {"error": str(e)}
 
+def process_page(session: requests.Session, page: int, code: str, timestamp: str) -> tuple:
+    """处理单个页面并返回数据"""
+    page_url = (
+        "http://106.15.60.27:22222/ycdc/bakCmisYcOrgan/getCurrentIntegrityPage"
+        f"?pageSize={PAGE_SIZE}&cioName=%E5%85%AC%E5%8F%B8&page={page}"
+        f"&code={quote(code)}&codeValue={timestamp}"
+    )
+    
+    try:
+        response = safe_request(session, page_url)
+        page_response = response.json()
+        
+        if "data" not in page_response or not page_response["data"]:
+            print(f"第 {page} 页数据为空，触发验证码刷新")
+            raise RuntimeError("empty response data")
+            
+        page_data = parse_response_data(page_response["data"])
+        
+        if "error" in page_data:
+            print(f"第 {page} 页数据解析错误: {page_data['error']}")
+            raise RuntimeError("invalid page data")
+            
+        return page_data.get("rows", []), page_data.get("total", 0)
+    except Exception as e:
+        print(f"第 {page} 页处理失败: {str(e)}")
+        raise
+
 def main():
     print("=== 启动数据获取程序 ===")
+    session = requests.Session()
+    all_data = []
+    
     try:
-        with create_session() as session:
-            timestamp = str(int(time.time() * 1000))
-            print(f"[步骤1] 生成时间戳: {timestamp}")
-
-            # 请求验证码
-            code_url = f"http://106.15.60.27:22222/ycdc/bakCmisYcOrgan/getCreateCode?codeValue={timestamp}"
-            print(f"[步骤2] 请求验证码接口: {code_url}")
-            code_response = safe_request(session, code_url).json()
+        # 初始获取验证码
+        current_code, current_ts = get_new_code(session)
+        print(f"[初始化] 验证码: {current_code} | 时间戳: {current_ts}")
+        
+        # 获取第一页确定总数
+        first_data, total = process_page(session, 1, current_code, current_ts)
+        total_pages = (total + PAGE_SIZE - 1) // PAGE_SIZE
+        print(f"[初始化] 总记录数: {total} | 总页数: {total_pages}")
+        
+        # 分页处理
+        page = 1
+        while page <= total_pages:
+            retry_count = 0
+            success = False
             
-            if code_response.get("code") != 0:
-                print(f"[错误] 验证码接口返回异常: {code_response}")
-                exit(1)
-
-            encrypted_data = code_response.get("data", "")
-            print(f"[步骤3] 解密验证码数据: {encrypted_data[:15]}...")
-            decrypted_code = aes_decrypt_base64(encrypted_data)
-            print(f"[成功] 解密结果: {decrypted_code}")
-
-            # 获取分页数据
-            first_url = (
-                "http://106.15.60.27:22222/ycdc/bakCmisYcOrgan/getCurrentIntegrityPage"
-                f"?pageSize={PAGE_SIZE}&cioName=%E5%85%AC%E5%8F%B8&page=1"
-                f"&code={quote(decrypted_code)}&codeValue={timestamp}"
-            )
-            print(f"[步骤4] 请求第一页数据: {first_url[:80]}...")
-            
-            # 解析响应数据
-            first_response = safe_request(session, first_url).json()
-            decrypted_data = parse_response_data(first_response.get("data", ""))
-            
-            print("\n=== 第一页数据 ===")
-            print(json.dumps(decrypted_data, indent=2, ensure_ascii=False))
-
-            total = decrypted_data.get("total", 0)
-            total_pages = (total + PAGE_SIZE - 1) // PAGE_SIZE
-            print(f"[信息] 总记录数: {total}, 总页数: {total_pages}")
-
-            all_data = []
-            for page in range(1, total_pages + 1):
-                page_url = (
-                    "http://106.15.60.27:22222/ycdc/bakCmisYcOrgan/getCurrentIntegrityPage"
-                    f"?pageSize={PAGE_SIZE}&cioName=%E5%85%AC%E5%8F%B8&page={page}"
-                    f"&code={quote(decrypted_code)}&codeValue={timestamp}"
-                )
-                print(f"[→] 获取第 {page} 页: {page_url}")
+            while retry_count < PAGE_RETRY_MAX and not success:
                 try:
-                    page_response = safe_request(session, page_url).json()
-                    page_data = parse_response_data(page_response.get("data", ""))
+                    print(f"\n[处理中] 第 {page} 页 (重试次数: {retry_count})")
+                    page_data, _ = process_page(session, page, current_code, current_ts)
                     
-                    print("\n=== 解密结果 ===")
-                    print(json.dumps(page_data, indent=2, ensure_ascii=False))
+                    all_data.extend(page_data)
+                    print(f"[成功] 获取到 {len(page_data)} 条记录")
+                    success = True
+                    page += 1
                     
-                    if isinstance(page_data.get("rows"), list):
-                        all_data.extend(page_data["rows"])
                 except Exception as e:
-                    print(f"[×] 第 {page} 页请求失败: {e}")
+                    retry_count += 1
+                    print(f"[重试] 第 {page} 页第 {retry_count} 次重试")
+                    
+                    # 获取新验证码
+                    try:
+                        current_code, current_ts = get_new_code(session)
+                        print(f"[刷新] 新验证码: {current_code} | 新时间戳: {current_ts}")
+                    except Exception as e:
+                        print(f"[警告] 验证码刷新失败: {str(e)}")
+                        break
+                    
+            if not success:
+                print(f"[终止] 第 {page} 页超过最大重试次数")
+                page += 1  # 跳过失败页
 
-            print(f"\n=== 共获取记录数: {len(all_data)} ===")
+        print(f"\n=== 数据获取完成 ===")
+        print(f"总获取记录数: {len(all_data)}")
+        print("示例数据:", json.dumps(all_data[:2], indent=2, ensure_ascii=False))
 
     except Exception as e:
         print(f"\n!!! 程序执行失败 !!!\n错误原因: {str(e)}")
-        print("""
-        常见解决方案：
-        1. 检查系统时间是否准确
-        2. 尝试更换网络环境
-        3. 等待5分钟后重试
-        4. 检查Cookie是否过期
-        """)
-        exit(1)
+    finally:
+        session.close()
 
 if __name__ == "__main__":
     main()
