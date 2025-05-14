@@ -6,7 +6,7 @@ import time
 from urllib.parse import quote
 import random
 from openpyxl import Workbook
-from openpyxl.styles import Font, Alignment, Border, Side
+from openpyxl.styles import Font, Alignment, Border, Side, PatternFill  # 添加了PatternFill导入
 from openpyxl.utils import get_column_letter
 
 # 配置常量
