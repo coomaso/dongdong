@@ -6,7 +6,7 @@ import time
 from urllib.parse import quote
 import random
 from openpyxl import Workbook
-from openpyxl.styles import Font, Alignment, Border, Side, PatternFill  # 添加了PatternFill导入
+from openpyxl.styles import Font, Alignment, Border, Side, PatternFill
 from openpyxl.utils import get_column_letter
 
 # 配置常量
@@ -42,13 +42,16 @@ def safe_request(session: requests.Session, url: str) -> requests.Response:
         try:
             if attempt > 0:
                 time.sleep(random.uniform(0.5, 2.5))
+            print(f"正在请求: {url}")  # 添加请求URL日志
             response = session.get(url, headers=HEADERS, timeout=TIMEOUT)
             response.raise_for_status()
             return response
         except requests.exceptions.Timeout:
             print(f"↺ 请求超时，正在重试 ({attempt+1}/{RETRY_COUNT})...")
         except requests.exceptions.RequestException as e:
-            raise RuntimeError(f"请求失败: {str(e)}")
+            print(f"请求异常: {str(e)}")  # 打印具体异常信息
+            if attempt < RETRY_COUNT - 1:
+                print(f"正在进行第 {attempt+2} 次尝试...")
     raise RuntimeError(f"超过最大重试次数 ({RETRY_COUNT})")
 
 def aes_decrypt_base64(encrypted_base64: str) -> str:
@@ -62,6 +65,7 @@ def aes_decrypt_base64(encrypted_base64: str) -> str:
         decrypted_bytes = cipher.decrypt(encrypted_bytes)
         return decrypted_bytes.rstrip(b'\x00').decode("utf-8")
     except Exception as e:
+        print(f"解密失败，原始数据: {encrypted_base64[:50]}...")  # 打印部分原始数据
         raise RuntimeError(f"解密失败: {str(e)}")
 
 def get_new_code(session: requests.Session) -> tuple:
@@ -71,22 +75,27 @@ def get_new_code(session: requests.Session) -> tuple:
 
     try:
         response = safe_request(session, code_url).json()
+        print(f"验证码接口响应: {json.dumps(response, ensure_ascii=False)[:100]}...")  # 打印部分响应
         if response.get("code") != 0:
             raise RuntimeError(f"验证码接口异常: {response}")
         return aes_decrypt_base64(response["data"]), timestamp
     except Exception as e:
+        print(f"获取验证码失败，URL: {code_url}")  # 打印失败的URL
         raise RuntimeError(f"获取新验证码失败: {str(e)}")
 
 def parse_response_data(encrypted_data: str) -> dict:
     """健壮的数据解析方法"""
     if not encrypted_data:
+        print("警告: 收到空的加密数据")  # 添加警告日志
         return {"error": "empty data"}
 
     try:
         decrypted_str = aes_decrypt_base64(encrypted_data)
+        print(f"解密后的数据样本: {decrypted_str[:100]}...")  # 打印解密后的数据样本
         return json.loads(decrypted_str)
-    except json.JSONDecodeError:
-        return {"error": "invalid json format"}
+    except json.JSONDecodeError as e:
+        print(f"JSON解析错误，数据样本: {encrypted_data[:50]}...")  # 打印错误数据样本
+        return {"error": f"invalid json format: {str(e)}"}
     except Exception as e:
         return {"error": str(e)}
 
@@ -101,6 +110,7 @@ def process_page(session: requests.Session, page: int, code: str, timestamp: str
     try:
         response = safe_request(session, page_url)
         page_response = response.json()
+        print(f"第 {page} 页API响应状态: {page_response.get('code', '未知')}")  # 打印响应状态
 
         if "data" not in page_response or not page_response["data"]:
             print(f"第 {page} 页数据为空，触发验证码刷新")
@@ -110,18 +120,34 @@ def process_page(session: requests.Session, page: int, code: str, timestamp: str
         
         if "error" in page_data:
             print(f"第 {page} 页数据解析错误: {page_data['error']}")
-            raise RuntimeError("invalid page data")
-        # 关键修改：从data字段获取企业记录，而不是rows
-        return page_data.get("data", []), page_data.get("total", 0)
+            raise RuntimeError(f"invalid page data: {page_data['error']}")
+        
+        records = page_data.get("data", [])
+        print(f"第 {page} 页解析出 {len(records)} 条记录")  # 明确记录数量
+        
+        # 检查解析出的数据是否有效
+        if not records:
+            print(f"警告: 第 {page} 页解析出空记录列表")
+            
+        return records, page_data.get("total", 0)
     except Exception as e:
         print(f"第 {page} 页处理失败: {str(e)}")
         raise
 
-def export_to_excel(data, filename="宜昌市信用评价信息.xlsx"):
+def export_to_excel(data, filename="企业数据.xlsx"):
     """将数据导出到Excel文件"""
+    # 检查数据有效性
     if not data:
-        print("没有数据可导出")
+        print("错误: 没有有效数据可导出")
         return
+    
+    # 过滤掉空记录
+    valid_data = [item for item in data if item]
+    if not valid_data:
+        print("错误: 所有记录均为空，无法导出")
+        return
+    
+    print(f"准备导出 {len(valid_data)} 条有效记录到Excel")
     
     # 创建工作簿和工作表
     wb = Workbook()
@@ -130,7 +156,7 @@ def export_to_excel(data, filename="宜昌市信用评价信息.xlsx"):
     
     # 获取所有可能的字段名作为表头
     all_keys = set()
-    for item in data:
+    for item in valid_data:
         all_keys.update(item.keys())
     
     # 排序表头（可选）
@@ -157,7 +183,7 @@ def export_to_excel(data, filename="宜昌市信用评价信息.xlsx"):
         cell.fill = PatternFill(start_color="4F81BD", end_color="4F81BD", fill_type="solid")
     
     # 添加数据行
-    for row_idx, item in enumerate(data, start=2):
+    for row_idx, item in enumerate(valid_data, start=2):
         row_data = [item.get(key, "") for key in headers]
         ws.append(row_data)
         
@@ -220,6 +246,10 @@ def main():
         total_pages = (total + PAGE_SIZE - 1) // PAGE_SIZE
         print(f"[初始化] 总记录数: {total} | 总页数: {total_pages}")
 
+        if total == 0:
+            print("错误: API返回总记录数为0，无需继续处理")
+            return
+
         # 分页处理
         page = 1
         while page <= total_pages:
@@ -230,16 +260,19 @@ def main():
                 try:
                     print(f"\n[处理中] 第 {page} 页 (重试次数: {retry_count})")
                     page_data, _ = process_page(session, page, current_code, current_ts)
-                    print(f"[成功获取数据] 第 {page} 页 {len(page_data)} 条记录")  # 明确标识成功获取
-                    print(page_data)
-                    all_data.extend(page_data)
-
-                    success = True                    
-                    page += 1
+                    
+                    if page_data:
+                        print(f"[成功获取数据] 第 {page} 页 {len(page_data)} 条记录")
+                        all_data.extend(page_data)
+                        success = True
+                        page += 1
+                    else:
+                        print(f"[警告] 第 {page} 页获取到空数据，尝试刷新验证码")
+                        raise RuntimeError("empty page data")
 
                 except Exception as e:
                     retry_count += 1
-                    print(f"[重试] 第 {page} 页第 {retry_count} 次重试")
+                    print(f"[重试] 第 {page} 页第 {retry_count} 次重试: {str(e)}")
 
                     # 获取新验证码
                     try:
@@ -250,18 +283,18 @@ def main():
                         break
 
             if not success:
-                print(f"[终止] 第 {page} 页超过最大重试次数")
+                print(f"[终止] 第 {page} 页超过最大重试次数，跳过此页")
                 page += 1  # 跳过失败页
 
         print(f"\n=== 数据获取完成 ===")
         print(f"总获取记录数: {len(all_data)}")
+        
+        # 导出数据前再次检查
         if all_data:
             print("示例数据:", json.dumps(all_data[:2], indent=2, ensure_ascii=False))
-            
-            # 导出数据到Excel
             export_to_excel(all_data)
         else:
-            print("没有获取到任何数据")
+            print("错误: 没有获取到任何有效数据，无法导出Excel")
 
     except Exception as e:
         print(f"\n!!! 程序执行失败 !!!\n错误原因: {str(e)}")
