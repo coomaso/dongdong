@@ -37,7 +37,7 @@ def safe_request(session: requests.Session, url: str) -> requests.Response:
             # 添加随机延迟防止封禁
             if attempt > 0:
                 time.sleep(random.uniform(0.5, 2.5))
-            
+
             response = session.get(
                 url,
                 headers=HEADERS,
@@ -58,9 +58,17 @@ def aes_decrypt_base64(encrypted_base64: str) -> str:
         encrypted_bytes = base64.b64decode(encrypted_base64)
         cipher = AES.new(AES_KEY, AES.MODE_CBC, AES_IV)
         decrypted_bytes = cipher.decrypt(encrypted_bytes)
-        return unpad(decrypted_bytes, AES.block_size).decode("utf-8")
-    except (ValueError, KeyError) as e:
+        try:
+            return unpad(decrypted_bytes, AES.block_size).decode("utf-8")
+        except ValueError:
+            return decrypted_bytes.rstrip(b'\x00').decode("utf-8")
+    except (ValueError, KeyError, UnicodeDecodeError) as e:
         raise RuntimeError(f"解密失败: {str(e)}")
+
+def create_session() -> requests.Session:
+    """创建 requests 会话对象"""
+    session = requests.Session()
+    return session
 
 def main():
     print("=== 启动数据获取程序 ===")
@@ -73,7 +81,7 @@ def main():
             # 请求验证码
             code_url = f"http://106.15.60.27:22222/ycdc/bakCmisYcOrgan/getCreateCode?codeValue={timestamp}"
             print(f"[步骤2] 请求验证码接口: {code_url}")
-            
+
             code_response = safe_request(session, code_url).json()
             if code_response.get("code") != 0:
                 print(f"[错误] 验证码接口返回异常: {code_response}")
@@ -82,20 +90,20 @@ def main():
             # 解密验证码
             encrypted_data = code_response["data"]
             print(f"[步骤3] 解密验证码数据: {encrypted_data[:15]}...")
-            
+
             decrypted_code = aes_decrypt_base64(encrypted_data)
             print(f"[成功] 解密结果: {decrypted_code}")
 
             # 请求最终数据
             final_url = (
-                "https://www.ycjsjg.net/ycdc/bakCmisYcOrgan/getCurrentIntegrityPage"
+                "http://106.15.60.27:22222/ycdc/bakCmisYcOrgan/getCurrentIntegrityPage"
                 f"?pageSize=10&cioName=%E5%85%AC%E5%8F%B8&page=0"
                 f"&code={quote(decrypted_code)}&codeValue={timestamp}"
             )
             print(f"[步骤4] 请求数据接口: {final_url[:80]}...")
-            
+
             final_data = safe_request(session, final_url).json()
-            
+
             # 输出结果
             print("\n=== 最终数据 ===")
             print(final_data)
@@ -113,3 +121,4 @@ def main():
 
 if __name__ == "__main__":
     main()
+
