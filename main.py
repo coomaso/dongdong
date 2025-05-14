@@ -14,7 +14,6 @@ HEADERS = {
     "Accept-Language": "zh-CN,zh;q=0.9,en;q=0.8,vi;q=0.7",
     "Connection": "keep-alive",
     "Content-Type": "application/json; charset=utf-8",
-    "Cookie": "Hm_lvt_b97569d26a525941d8d163729d284198=1745837143; Hm_lvt_e8002ef3d9e0d8274b5b74cc4a027d08=1745837143",
     "Host": "www.ycjsjg.net",
     "Referer": "https://www.ycjsjg.net/xxgs/",
     "Sec-Ch-Ua": '"Chromium";v="122", "Not(A:Brand";v="24", "Google Chrome";v="122"',
@@ -30,31 +29,6 @@ AES_KEY = bytes.fromhex("6875616E6779696E6875616E6779696E")  # AES-256密钥
 AES_IV = b"sskjKingFree5138"  # 16字节IV
 RETRY_COUNT = 3               # 请求重试次数
 TIMEOUT = 15                  # 请求超时时间（秒）
-
-def network_check() -> bool:
-    """执行基础网络诊断"""
-    try:
-        # DNS解析检查
-        ip = socket.gethostbyname('www.ycjsjg.net')
-        print(f"[网络诊断] DNS解析成功 → IP地址: {ip}")
-        
-        # 端口连通性检查
-        with socket.create_connection((ip, 443), timeout=5) as sock:
-            print("[网络诊断] 443端口可访问")
-            return True
-    except Exception as e:
-        print(f"[网络诊断] 失败: {str(e)}")
-        return False
-
-def create_session() -> requests.Session:
-    """创建带持久化Cookie的会话"""
-    session = requests.Session()
-    # 更新初始Cookie
-    session.cookies.update({
-        "Hm_lvt_b97569d26a525941d8d163729d284198": "1745837143",
-        "Hm_lvt_e8002ef3d9e0d8274b5b74cc4a027d08": "1745837143"
-    })
-    return session
 
 def safe_request(session: requests.Session, url: str) -> requests.Response:
     """带自动重试的安全请求"""
@@ -90,23 +64,6 @@ def aes_decrypt_base64(encrypted_base64: str) -> str:
 
 def main():
     print("=== 启动数据获取程序 ===")
-    
-    # 网络环境检查
-    if not network_check():
-        print("""
-        !!! 网络连接异常 !!!
-        可能原因：
-        1. 本地网络未连接
-        2. 防火墙阻止访问
-        3. 目标服务器不可用
-        4. DNS解析失败
-        建议操作：
-        - 检查网络连接
-        - 尝试使用手机热点
-        - 联系网络管理员
-        """)
-        exit(1)
-
     try:
         with create_session() as session:
             # 生成时间戳
@@ -114,7 +71,7 @@ def main():
             print(f"[步骤1] 生成时间戳: {timestamp}")
 
             # 请求验证码
-            code_url = f"http://106.15.60.27:22222/ycdc/bakCmisYcOrgan/getCreateCode?codeValue=undefined"
+            code_url = f"http://106.15.60.27:22222/ycdc/bakCmisYcOrgan/getCreateCode?codeValue={timestamp}"
             print(f"[步骤2] 请求验证码接口: {code_url}")
             
             code_response = safe_request(session, code_url).json()
