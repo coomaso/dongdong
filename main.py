@@ -1,25 +1,28 @@
 from Crypto.Cipher import AES
 import base64
 
-class CryptoUtils:
-    @staticmethod
-    def decrypt_cx_data(encrypted_b64: str) -> str:
-        """信用分加密数据解密"""
-        # 固定密钥（对应 JavaScript 代码中的 huangyinhuanhuan...）
-        key = bytes.fromhex("6875616E6779696E6875616E6779696E")
-        
-        # 固定 IV（对应 sskjKingFree5138）
-        iv = "sskjKingFree5138".encode('utf-8').ljust(16, b'\0')[:16]
-        
-        # 解密处理
-        cipher = AES.new(key, AES.MODE_CBC, iv=iv)
-        ciphertext = base64.b64decode(encrypted_b64)
-        decrypted = cipher.decrypt(ciphertext)
-        
-        # 清洗解密结果
-        return decrypted.decode('utf-8', errors='ignore').split('\x00')[0].strip()
+def aes_decrypt_base64(encrypted_base64: str) -> str:
+    # 密钥和 IV（必须为 bytes）
+    key = bytes.fromhex("6875616E6779696E6875616E6779696E")  # hex 解码后的16字节 key
+    iv = "sskjKingFree5138".encode("utf-8")                  # iv 转为 bytes
 
-# 使用示例
-if __name__ == "__main__":
-    data = "tydAd9ijOGonZN2I/FGYsQ=="
-    print(CryptoUtils.decrypt_cx_data(data))  # 输出 sZi0
+    # 解码 base64 编码的密文
+    encrypted_bytes = base64.b64decode(encrypted_base64)
+
+    # 创建 AES 解密器
+    cipher = AES.new(key, AES.MODE_CBC, iv)
+
+    # 解密
+    decrypted_bytes = cipher.decrypt(encrypted_bytes)
+
+    # 去除填充的 \x00 字符
+    decrypted_text = decrypted_bytes.rstrip(b'\x00').decode("utf-8")
+
+    return decrypted_text
+
+
+# 假设这是从服务器收到的 base64 编码的加密字符串
+encrypted_base64 = "kOfWd64IPxdrps3BLNH/zQ=="  # 仅示例
+
+decrypted = aes_decrypt_base64(encrypted_base64)
+print("解密结果:", decrypted)
