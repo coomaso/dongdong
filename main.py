@@ -87,8 +87,9 @@ def main():
             print(first_data)
 
             print("\n=== 第一页解密结果 ===")
-            print(aes_decrypt_base64(first_data.get("data", "")))
-            total = int(first_data.get("total", 0))
+            first_data_decrypt = aes_decrypt_base64(first_data.get("data", ""))
+            print(first_data_decrypt)
+            total = int(first_data_decrypt.get("total", 0))
             total_pages = (total + PAGE_SIZE - 1) // PAGE_SIZE
             print(f"[信息] 总记录数: {total}, 总页数: {total_pages}")
 
