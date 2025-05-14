@@ -135,188 +135,128 @@ def process_page(session: requests.Session, page: int, code: str, timestamp: str
         print(f"第 {page} 页处理失败: {str(e)}")
         raise
 
-def export_to_excel(data, filename="企业数据.xlsx"):
-    """增强版Excel导出函数(支持复杂数据结构)"""
-    
-    # ==================== 前置校验 ====================
-    if not data:
-        print("错误: 输入数据为空，取消导出操作")
-        return
-    
+def export_to_excel(data, github_mode=False):
+    """
+    GitHub专用Excel导出函数
+    :param data: 要导出的数据
+    :param github_mode: 启用GitHub工作流适配模式
+    :return: 生成的文件路径
+    """
+    # ==================== GitHub环境适配 ====================
+    if github_mode:
+        # 在GitHub Actions中强制使用绝对路径
+        base_dir = os.path.join(os.getcwd(), "excel_output")
+        os.makedirs(base_dir, exist_ok=True)
+        filename = os.path.join(
+            base_dir,
+            f"宜昌市信用评价信息_{datetime.now().strftime('%Y%m%d%H%M%S')}.xlsx"
+        )
+    else:
+        filename = "宜昌市信用评价信息.xlsx"
+
+    print(f"::debug::[Excel Export] 输出路径: {os.path.abspath(filename)}")
+
     # ==================== 数据预处理 ====================
-    processed_data = []
-    error_count = 0
-    
-    for idx, item in enumerate(data, 1):
-        try:
-            # 类型安全检查
-            if not isinstance(item, dict):
-                print(f"警告: 第{idx}条数据不是字典格式，已跳过")
-                error_count += 1
-                continue
-            
-            clean_item = {}
-            for key, value in item.items():
-                # 处理不同类型数据
-                if isinstance(value, (list, dict)):
-                    # 将复杂结构转为JSON字符串
-                    clean_item[key] = json.dumps(value, ensure_ascii=False) if value else ""
-                elif isinstance(value, (int, float)):
-                    # 数值类型直接保留
-                    clean_item[key] = value
-                elif value is None:
-                    # 空值处理
-                    clean_item[key] = ""
-                else:
-                    # 其他类型转为字符串
-                    clean_item[key] = str(value)
-            
-            # 检查是否存在有效数据
-            if any(clean_item.values()):
-                processed_data.append(clean_item)
+    def preprocess_data(item):
+        """递归处理嵌套数据结构"""
+        processed = {}
+        for key, value in item.items():
+            if isinstance(value, (list, dict)):
+                processed[key] = json.dumps(value, ensure_ascii=False)
+            elif isinstance(value, (int, float)):
+                processed[key] = value
+            elif value is None:
+                processed[key] = ""
             else:
-                print(f"警告: 第{idx}条数据所有字段均为空，已跳过")
-                error_count += 1
-                
-        except Exception as e:
-            print(f"处理第{idx}条数据时发生错误: {str(e)}")
-            error_count += 1
-    
-    # ==================== 有效性检查 ====================
-    if not processed_data:
-        print(f"错误: 所有{len(data)}条数据均无效，取消导出")
-        return
-    
-    print(f"数据预处理完成，有效数据: {len(processed_data)}条，无效数据: {error_count}条")
-    
-    # ==================== 创建Excel ====================
+                processed[key] = str(value)
+        return processed
+
+    processed_data = [preprocess_data(item) for item in data if isinstance(item, dict)]
+
+    # ==================== 创建Workbook ====================
     try:
         wb = Workbook()
         ws = wb.active
-        ws.title = "企业信息"
+        ws.title = "企业数据"
     except Exception as e:
-        print(f"创建Excel工作簿失败: {str(e)}")
-        return
+        print(f"::error:: 创建工作簿失败 - {str(e)}")
+        return None
+
+    # ==================== 动态生成表头 ====================
+    headers = list({key for item in processed_data for key in item.keys()})
     
-    # ==================== 生成动态表头 ====================
-    header_set = set()
-    for item in processed_data:
-        header_set.update(item.keys())
-    
-    # 排序表头(可选)
-    headers = sorted(header_set, key=lambda x: (
-        # 自定义排序逻辑
-        ("cioName", "eqtName", "csf").index(x) if x in ("cioName", "eqtName", "csf") else 999,
-        x
-    ))
-    
-    # ==================== 样式配置 ====================
-    # 表头样式
-    header_font = Font(bold=True, color="FFFFFF")
-    header_fill = PatternFill(start_color="4F81BD", end_color="4F81BD", fill_type="solid")
-    header_alignment = Alignment(horizontal="center", vertical="center", wrap_text=True)
-    thin_border = Border(
-        left=Side(style="thin"),
-        right=Side(style="thin"),
-        top=Side(style="thin"),
-        bottom=Side(style="thin")
+    # GitHub环境专用表头排序
+    priority_headers = ["cioName", "eqtName", "csf", "orgId", "cecId"]
+    headers = sorted(
+        headers,
+        key=lambda x: (priority_headers.index(x) if x in priority_headers else len(priority_headers), x)
     )
-    
-    # 数据样式
-    data_alignment = Alignment(vertical="center", wrap_text=True)
-    
+
     # ==================== 写入数据 ====================
     try:
-        # 添加表头
+        # 写入表头
         ws.append(headers)
         
         # 设置表头样式
+        header_style = {
+            "font": Font(bold=True, color="FFFFFF"),
+            "fill": PatternFill("solid", fgColor="003366"),
+            "alignment": Alignment(horizontal="center", vertical="center"),
+            "border": Border(
+                left=Side(style="thin"),
+                right=Side(style="thin"),
+                top=Side(style="thin"),
+                bottom=Side(style="thin")
+            )
+        }
         for col_idx, header in enumerate(headers, 1):
-            cell = ws.cell(row=1, column=col_idx)
-            cell.font = header_font
-            cell.fill = header_fill
-            cell.alignment = header_alignment
-            cell.border = thin_border
-        
+            cell = ws.cell(row=1, column=col_idx, value=header)
+            for attr, value in header_style.items():
+                setattr(cell, attr, value)
+
         # 写入数据行
         for row_idx, item in enumerate(processed_data, 2):
-            row = []
-            for header in headers:
-                # 安全获取值
-                value = item.get(header, "")
-                
-                # 处理超长内容
-                if isinstance(value, str) and len(value) > 32767:
-                    value = value[:30000] + "...[数据截断]"
-                
-                row.append(value)
-            
+            row = [item.get(header, "") for header in headers]
             ws.append(row)
-            
-            # 设置数据行样式
-            for col_idx in range(1, len(headers)+1):
-                cell = ws.cell(row=row_idx, column=col_idx)
-                cell.alignment = data_alignment
-                cell.border = thin_border
-                
-                # 自动识别数值类型
-                if isinstance(cell.value, (int, float)):
-                    cell.number_format = "0.00"
+
+            # 自动设置数字格式
+            for col_idx, value in enumerate(row, 1):
+                if isinstance(value, (int, float)):
+                    ws.cell(row=row_idx, column=col_idx).number_format = "0.00"
+
     except Exception as e:
-        print(f"写入Excel数据时发生错误: {str(e)}")
-        return
-    
+        print(f"::error:: 写入数据失败 - {str(e)}")
+        return None
+
     # ==================== 格式优化 ====================
     try:
         # 自动调整列宽
         for col_idx, header in enumerate(headers, 1):
-            max_length = 0
-            column = get_column_letter(col_idx)
-            
-            # 计算最大长度
-            for cell in ws[column]:
-                try:
-                    length = len(str(cell.value))
-                    if length > max_length:
-                        max_length = length
-                except:
-                    pass
-            
-            # 设置列宽(限制最大50字符)
-            adjusted_width = min(max_length + 2, 50)
-            ws.column_dimensions[column].width = adjusted_width
-        
-        # 添加标题行
-        title = f"企业信用数据 ({time.strftime('%Y-%m-%d')})"
-        ws.insert_rows(1)
-        ws.merge_cells(start_row=1, start_column=1, end_row=1, end_column=len(headers))
-        title_cell = ws.cell(row=1, column=1, value=title)
-        title_cell.font = Font(size=14, bold=True)
-        title_cell.alignment = Alignment(horizontal="center", vertical="center")
-        
-        # 冻结表头
+            max_len = max(
+                len(str(header)),
+                max(len(str(ws.cell(row=row, column=col_idx).value)) for row in range(2, ws.max_row + 1))
+            )
+            ws.column_dimensions[get_column_letter(col_idx)].width = min(max_len + 2, 50)
+
+        # 添加冻结窗格
         ws.freeze_panes = "A2"
+
+        # 添加文件元数据
+        ws.sheet_properties.tabColor = "003366"
+        wb.properties.title = "企业信用数据"
+        wb.properties.creator = "潇洒哥"
+        
     except Exception as e:
-        print(f"格式优化时发生错误: {str(e)}")
-    
+        print(f"::warning:: 格式优化失败 - {str(e)}")
+
     # ==================== 保存文件 ====================
     try:
-        # 检查文件名后缀
-        if not filename.endswith(".xlsx"):
-            filename += ".xlsx"
-            
-        # 检查目录是否存在
-        os.makedirs(os.path.dirname(filename), exist_ok=True)
-        
-        # 保存文件
         wb.save(filename)
-        print(f"成功导出文件: {os.path.abspath(filename)}")
-        print(f"总数据量: {len(processed_data)}条")
-        print(f"列字段: {', '.join(headers)}")
-    except PermissionError:
-        print(f"错误: 文件 {filename} 被其他程序占用，请关闭后重试")
+        print(f"::notice:: Excel文件已生成 - {os.path.abspath(filename)}")
+        return filename
     except Exception as e:
-        print(f"保存文件失败: {str(e)}")
+        print(f"::error:: 文件保存失败 - {str(e)}")
+        return None
         
 def main():
     print("=== 启动数据获取程序 ===")
@@ -378,11 +318,11 @@ def main():
         
         # 导出数据前再次检查
         if all_data:
-            print("示例数据:", json.dumps(all_data[:2], indent=2, ensure_ascii=False))
-            export_to_excel(all_data)
+            saved_path = export_to_excel(all_data, github_mode=True)
+            if saved_path:
+                print(f"::set-output name=file-path::{saved_path}")
         else:
             print("错误: 没有获取到任何有效数据，无法导出Excel")
-
     except Exception as e:
         print(f"\n!!! 程序执行失败 !!!\n错误原因: {str(e)}")
     finally:
