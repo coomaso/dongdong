@@ -33,21 +33,28 @@ jobs:
     - name: 执行数据采集
       id: export
       run: |
-        # 生成时间戳（Python侧生成）
-        ts=$(python3 -c "from datetime import datetime; print(datetime.now().strftime('%Y%m%d%H%M'))")
+        # 生成时间戳并设置为输出变量
+        ts=$(date +%Y%m%d%H%M)
+        echo "ts=${ts}" >> $GITHUB_OUTPUT
         
         # 清理历史文件
+        mkdir -p excel_output
         find excel_output/ -maxdepth 1 -type f -name "*.xlsx" -delete
         
-        # 执行采集脚本并传递时间戳
-        python3 main.py $ts
+        # 执行采集脚本
+        python3 main.py
+        
+        # 重命名生成的文件（添加时间戳）
+        original_file=$(ls excel_output/*.xlsx | head -n 1)
+        new_file="excel_output/宜昌市信用数据_${ts}.xlsx"
+        [ -f "$original_file" ] && mv "$original_file" "$new_file"
         
         # 验证文件生成
-        if [ ! -f "excel_output/宜昌市信用数据_${ts}.xlsx" ]; then
+        if [ ! -f "$new_file" ]; then
             echo "::error:: 文件生成失败"
             exit 1
         fi
-        echo "file-path=excel_output/宜昌市信用数据_${ts}.xlsx" >> $GITHUB_OUTPUT
+        echo "file-path=${new_file}" >> $GITHUB_OUTPUT
 
     - name: 上传数据文件
       uses: actions/upload-artifact@v4
@@ -59,16 +66,13 @@ jobs:
     - name: 提交到仓库
       run: |
         # 配置Git身份
-        git config user.name "coomaso"
-        git config user.email "coomaso@gmail.com"
+        git config user.name "GitHub Actions"
+        git config user.email "actions@github.com"
         
         # 创建历史数据目录
         mkdir -p historical_data
         
-        # 获取时间戳
-        ts=${{ steps.export.outputs.ts }}
-        
-        # 移动文件到历史目录（保留原文件名）
+        # 移动文件到历史目录
         if [ -f "${{ steps.export.outputs.file-path }}" ]; then
           mv "${{ steps.export.outputs.file-path }}" "historical_data/"
         else
@@ -78,7 +82,9 @@ jobs:
         
         # 提交变更
         git add .
-        git commit -m "📊 信用数据更新 [$ts]" || echo "没有变更可提交"
-        git push origin main --force
+        git commit -m "📊 信用数据更新 [${{ steps.export.outputs.ts }}]" || echo "没有变更可提交"
+        
+        # 强制推送（注意安全）
+        git push origin main
       env:
         GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
