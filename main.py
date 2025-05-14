@@ -104,7 +104,7 @@ def process_page(session: requests.Session, page: int, code: str, timestamp: str
             raise RuntimeError("empty response data")
             
         page_data = parse_response_data(page_response["data"])
-        print(page_data)
+        
         if "error" in page_data:
             print(f"第 {page} 页数据解析错误: {page_data['error']}")
             raise RuntimeError("invalid page data")
@@ -139,9 +139,9 @@ def main():
                 try:
                     print(f"\n[处理中] 第 {page} 页 (重试次数: {retry_count})")
                     page_data, _ = process_page(session, page, current_code, current_ts)
-                    
-                    all_data.extend(page_data)
-                    print(f"[成功] 获取到 {len(page_data)} 条记录")
+                    print(page_data)
+                    all_data.extend(page_data['data'])
+                    print(f"[成功] 获取到 {len(page_data['data'])} 条记录")
                     success = True
                     page += 1
                     
