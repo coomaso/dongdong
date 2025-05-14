@@ -26,6 +26,7 @@ HEADERS = {
 
 RETRY_COUNT = 3               # 请求重试次数
 TIMEOUT = 15                  # 请求超时时间（秒）
+PAGE_SIZE = 10
 
 def safe_request(session: requests.Session, url: str) -> requests.Response:
     """带自动重试的安全请求"""
@@ -44,7 +45,7 @@ def safe_request(session: requests.Session, url: str) -> requests.Response:
 
 def aes_decrypt_base64(encrypted_base64: str) -> str:
     """AES-CBC解密Base64数据"""
-    key = b"6875616E6779696E6875616E6779696E"  # 注意：这里是明文字符串，不是 hex 解码
+    key = b"6875616E6779696E6875616E6779696E"
     iv = b"sskjKingFree5138"
     encrypted_bytes = base64.b64decode(encrypted_base64)
     cipher = AES.new(key, AES.MODE_CBC, iv)
@@ -74,19 +75,41 @@ def main():
             decrypted_code = aes_decrypt_base64(encrypted_data)
             print(f"[成功] 解密结果: {decrypted_code}")
 
-            final_url = (
+            # 获取第一页用于计算总页数
+            first_url = (
                 "http://106.15.60.27:22222/ycdc/bakCmisYcOrgan/getCurrentIntegrityPage"
-                f"?pageSize=10&cioName=%E5%85%AC%E5%8F%B8&page=0"
+                f"?pageSize={PAGE_SIZE}&cioName=%E5%85%AC%E5%8F%B8&page=1"
                 f"&code={quote(decrypted_code)}&codeValue={timestamp}"
             )
-            print(f"[步骤4] 请求数据接口: {final_url[:80]}...")
+            print(f"[步骤4] 请求第一页数据: {first_url[:80]}...")
+            first_data = safe_request(session, first_url).json()
 
-            final_data = safe_request(session, final_url).json()
-            print("\n=== 最终数据 ===")
-            print(final_data)
+            total = int(first_data.get("total", 0))
+            total_pages = (total + PAGE_SIZE - 1) // PAGE_SIZE
+            print(f"[信息] 总记录数: {total}, 总页数: {total_pages}")
 
-            print("\n=== 解密结果 ===")
-            print(aes_decrypt_base64(final_data.get("data", "")))
+            all_data = []
+            for page in range(1, total_pages + 1):
+                page_url = (
+                    "http://106.15.60.27:22222/ycdc/bakCmisYcOrgan/getCurrentIntegrityPage"
+                    f"?pageSize={PAGE_SIZE}&cioName=%E5%85%AC%E5%8F%B8&page={page}"
+                    f"&code={quote(decrypted_code)}&codeValue={timestamp}"
+                )
+                print(f"[→] 获取第 {page} 页: {page_url}")
+                try:
+                    page_data = safe_request(session, page_url).json()
+
+                    print("\n=== 最终数据 ===")
+                    print(page_data)
+
+                    print("\n=== 解密结果 ===")
+                    print(aes_decrypt_base64(page_data.get("data", "")))
+
+                    all_data.extend(page_data.get("data", []))
+                except Exception as e:
+                    print(f"[×] 第 {page} 页请求失败: {e}")
+
+            print(f"\n=== 共获取记录数: {len(all_data)} ===")
 
     except Exception as e:
         print(f"\n!!! 程序执行失败 !!!\n错误原因: {str(e)}")
@@ -98,9 +121,6 @@ def main():
         4. 检查Cookie是否过期
         """)
         exit(1)
-
-if __name__ == "__main__":
-    main()
 
 if __name__ == "__main__":
     main()
