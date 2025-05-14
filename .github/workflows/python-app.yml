@@ -5,23 +5,18 @@ on:
     - cron: '0 20 * * *'  # 每天UTC时间20:00运行（北京时间次日04:00）
   push:
     branches: [ "main" ]
-  workflow_dispatch:  # 允许手动触发
+  workflow_dispatch:
 
 permissions:
   contents: write
-  actions: write
 
 jobs:
   data-collect:
     runs-on: ubuntu-latest
-    outputs:
-      excel-file: ${{ steps.export.outputs.file-path }}
 
     steps:
     - name: 检出代码
       uses: actions/checkout@v3
-      with:
-        fetch-depth: 0  # 获取完整提交历史
 
     - name: 设置Python环境
       uses: actions/setup-python@v4
@@ -31,19 +26,21 @@ jobs:
     - name: 安装依赖
       run: |
         python -m pip install --upgrade pip
-        pip install pycryptodome requests openpyxl
+        pip install pycryptodome==3.19.1 requests==2.31.0 openpyxl==3.1.2
 
     - name: 执行数据采集
       id: export
       run: |
         python3 main.py
-        echo "file-path=$(ls excel_output/*.xlsx)" >> $GITHUB_OUTPUT
+        echo "file-path=excel_output/宜昌市信用评价信息_*.xlsx" >> $GITHUB_OUTPUT
 
     - name: 上传数据文件
-      uses: actions/upload-artifact@v3
+      uses: actions/upload-artifact@v4  # 更新到v4版本
       with:
         name: enterprise-data
-        path: ${{ steps.export.outputs.file-path }}
+        path: |
+          excel_output/*.xlsx
+          !excel_output/.gitkeep
         retention-days: 7
 
     - name: 提交到仓库
@@ -51,16 +48,14 @@ jobs:
         # 配置Git身份
         git config user.name "coomaso"
         git config user.email "coomaso@gmail.com"
-
-        # 移动文件到目标目录
-        mkdir -p historical_data
-        cp ${{ steps.export.outputs.file-path }} historical_data/
-
-        # 添加并提交
-        git add historical_data/
-        git commit -m "📊 自动更新信用数据 ($(date +'%Y-%m-%d %H:%M'))" || echo "没有变更可提交"
         
-        # 强制推送（处理历史重写）
-        git push origin main --force
+        # 移动并重命名文件
+        mkdir -p historical_data
+        ts=$(date +"%Y%m%d")
+        cp excel_output/*.xlsx historical_data/宜昌市信用评价信息_$ts.xlsx
+        
+        git add .
+        git commit -m "📈 自动更新信用数据 ($ts)" || echo "没有变更可提交"
+        git push origin main
       env:
         GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
