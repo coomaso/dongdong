@@ -104,13 +104,12 @@ def process_page(session: requests.Session, page: int, code: str, timestamp: str
             raise RuntimeError("empty response data")
 
         page_data = parse_response_data(page_response["data"])
-        print(f"[解析后数据] {json.dumps(page_data, indent=2, ensure_ascii=False)}")  # 打印解析后的数据
         
         if "error" in page_data:
             print(f"第 {page} 页数据解析错误: {page_data['error']}")
             raise RuntimeError("invalid page data")
-
-        return page_data.get("rows", []), page_data.get("total", 0)
+        # 关键修改：从data字段获取企业记录，而不是rows
+        return page_data.get("data", []), page_data.get("total", 0)
     except Exception as e:
         print(f"第 {page} 页处理失败: {str(e)}")
         raise
