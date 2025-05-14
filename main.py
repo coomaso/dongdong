@@ -1,5 +1,6 @@
 import requests
 import base64
+import json
 from Crypto.Cipher import AES
 import time
 import socket
@@ -55,6 +56,16 @@ def aes_decrypt_base64(encrypted_base64: str) -> str:
 def create_session() -> requests.Session:
     return requests.Session()
 
+def parse_response_data(encrypted_data: str) -> dict:
+    """解密并解析响应数据"""
+    try:
+        decrypted_str = aes_decrypt_base64(encrypted_data)
+        return json.loads(decrypted_str)  # 解析JSON字符串
+    except json.JSONDecodeError:
+        return {"error": "Invalid JSON format"}
+    except Exception as e:
+        return {"error": str(e)}
+
 def main():
     print("=== 启动数据获取程序 ===")
     try:
@@ -62,34 +73,36 @@ def main():
             timestamp = str(int(time.time() * 1000))
             print(f"[步骤1] 生成时间戳: {timestamp}")
 
+            # 请求验证码
             code_url = f"http://106.15.60.27:22222/ycdc/bakCmisYcOrgan/getCreateCode?codeValue={timestamp}"
             print(f"[步骤2] 请求验证码接口: {code_url}")
             code_response = safe_request(session, code_url).json()
+            
             if code_response.get("code") != 0:
                 print(f"[错误] 验证码接口返回异常: {code_response}")
                 exit(1)
 
-            encrypted_data = code_response["data"]
+            encrypted_data = code_response.get("data", "")
             print(f"[步骤3] 解密验证码数据: {encrypted_data[:15]}...")
-
             decrypted_code = aes_decrypt_base64(encrypted_data)
             print(f"[成功] 解密结果: {decrypted_code}")
 
-            # 获取第一页用于计算总页数
+            # 获取分页数据
             first_url = (
                 "http://106.15.60.27:22222/ycdc/bakCmisYcOrgan/getCurrentIntegrityPage"
                 f"?pageSize={PAGE_SIZE}&cioName=%E5%85%AC%E5%8F%B8&page=1"
                 f"&code={quote(decrypted_code)}&codeValue={timestamp}"
             )
             print(f"[步骤4] 请求第一页数据: {first_url[:80]}...")
-            first_data = safe_request(session, first_url).json()
+            
+            # 解析响应数据
+            first_response = safe_request(session, first_url).json()
+            decrypted_data = parse_response_data(first_response.get("data", ""))
+            
             print("\n=== 第一页数据 ===")
-            print(first_data)
+            print(json.dumps(decrypted_data, indent=2, ensure_ascii=False))
 
-            print("\n=== 第一页解密结果 ===")
-            first_data_decrypt = aes_decrypt_base64(first_data.get("data", ""))
-            print(first_data_decrypt)
-            total = int(first_data_decrypt.get("total", 0))
+            total = decrypted_data.get("total", 0)
             total_pages = (total + PAGE_SIZE - 1) // PAGE_SIZE
             print(f"[信息] 总记录数: {total}, 总页数: {total_pages}")
 
@@ -102,15 +115,14 @@ def main():
                 )
                 print(f"[→] 获取第 {page} 页: {page_url}")
                 try:
-                    page_data = safe_request(session, page_url).json()
-
-                    print("\n=== 最终数据 ===")
-                    print(page_data)
-
+                    page_response = safe_request(session, page_url).json()
+                    page_data = parse_response_data(page_response.get("data", ""))
+                    
                     print("\n=== 解密结果 ===")
-                    print(aes_decrypt_base64(page_data.get("data", "")))
-
-                    all_data.extend(page_data.get("data", []))
+                    print(json.dumps(page_data, indent=2, ensure_ascii=False))
+                    
+                    if isinstance(page_data.get("rows"), list):
+                        all_data.extend(page_data["rows"])
                 except Exception as e:
                     print(f"[×] 第 {page} 页请求失败: {e}")
 
