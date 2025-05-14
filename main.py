@@ -135,102 +135,188 @@ def process_page(session: requests.Session, page: int, code: str, timestamp: str
         raise
 
 def export_to_excel(data, filename="企业数据.xlsx"):
-    """将数据导出到Excel文件"""
-    # 检查数据有效性
+    """增强版Excel导出函数(支持复杂数据结构)"""
+    
+    # ==================== 前置校验 ====================
     if not data:
-        print("错误: 没有有效数据可导出")
+        print("错误: 输入数据为空，取消导出操作")
         return
     
-    # 过滤掉空记录
-    valid_data = [item for item in data if item]
-    if not valid_data:
-        print("错误: 所有记录均为空，无法导出")
+    # ==================== 数据预处理 ====================
+    processed_data = []
+    error_count = 0
+    
+    for idx, item in enumerate(data, 1):
+        try:
+            # 类型安全检查
+            if not isinstance(item, dict):
+                print(f"警告: 第{idx}条数据不是字典格式，已跳过")
+                error_count += 1
+                continue
+            
+            clean_item = {}
+            for key, value in item.items():
+                # 处理不同类型数据
+                if isinstance(value, (list, dict)):
+                    # 将复杂结构转为JSON字符串
+                    clean_item[key] = json.dumps(value, ensure_ascii=False) if value else ""
+                elif isinstance(value, (int, float)):
+                    # 数值类型直接保留
+                    clean_item[key] = value
+                elif value is None:
+                    # 空值处理
+                    clean_item[key] = ""
+                else:
+                    # 其他类型转为字符串
+                    clean_item[key] = str(value)
+            
+            # 检查是否存在有效数据
+            if any(clean_item.values()):
+                processed_data.append(clean_item)
+            else:
+                print(f"警告: 第{idx}条数据所有字段均为空，已跳过")
+                error_count += 1
+                
+        except Exception as e:
+            print(f"处理第{idx}条数据时发生错误: {str(e)}")
+            error_count += 1
+    
+    # ==================== 有效性检查 ====================
+    if not processed_data:
+        print(f"错误: 所有{len(data)}条数据均无效，取消导出")
         return
     
-    print(f"准备导出 {len(valid_data)} 条有效记录到Excel")
+    print(f"数据预处理完成，有效数据: {len(processed_data)}条，无效数据: {error_count}条")
     
-    # 创建工作簿和工作表
-    wb = Workbook()
-    ws = wb.active
-    ws.title = "企业信息"
+    # ==================== 创建Excel ====================
+    try:
+        wb = Workbook()
+        ws = wb.active
+        ws.title = "企业信息"
+    except Exception as e:
+        print(f"创建Excel工作簿失败: {str(e)}")
+        return
     
-    # 获取所有可能的字段名作为表头
-    all_keys = set()
-    for item in valid_data:
-        all_keys.update(item.keys())
+    # ==================== 生成动态表头 ====================
+    header_set = set()
+    for item in processed_data:
+        header_set.update(item.keys())
     
-    # 排序表头（可选）
-    headers = sorted(all_keys)
+    # 排序表头(可选)
+    headers = sorted(header_set, key=lambda x: (
+        # 自定义排序逻辑
+        ("cioName", "eqtName", "csf").index(x) if x in ("cioName", "eqtName", "csf") else 999,
+        x
+    ))
     
-    # 添加表头
-    ws.append(headers)
-    
-    # 设置表头样式
+    # ==================== 样式配置 ====================
+    # 表头样式
     header_font = Font(bold=True, color="FFFFFF")
-    header_alignment = Alignment(horizontal="center", vertical="center")
-    header_border = Border(
+    header_fill = PatternFill(start_color="4F81BD", end_color="4F81BD", fill_type="solid")
+    header_alignment = Alignment(horizontal="center", vertical="center", wrap_text=True)
+    thin_border = Border(
         left=Side(style="thin"),
         right=Side(style="thin"),
         top=Side(style="thin"),
         bottom=Side(style="thin")
     )
     
-    # 应用表头样式
-    for cell in ws[1]:
-        cell.font = header_font
-        cell.alignment = header_alignment
-        cell.border = header_border
-        cell.fill = PatternFill(start_color="4F81BD", end_color="4F81BD", fill_type="solid")
+    # 数据样式
+    data_alignment = Alignment(vertical="center", wrap_text=True)
     
-    # 添加数据行
-    for row_idx, item in enumerate(valid_data, start=2):
-        row_data = [item.get(key, "") for key in headers]
-        ws.append(row_data)
-        
-        # 设置数据行样式
-        for col_idx, cell in enumerate(ws[row_idx], start=1):
-            cell.alignment = Alignment(vertical="center")
-            cell.border = Border(
-                left=Side(style="thin"),
-                right=Side(style="thin"),
-                top=Side(style="thin"),
-                bottom=Side(style="thin")
-            )
-    
-    # 自动调整列宽
-    for column in ws.columns:
-        max_length = 0
-        column_letter = get_column_letter(column[0].column)
-        for cell in column:
-            try:
-                if len(str(cell.value)) > max_length:
-                    max_length = len(str(cell.value))
-            except:
-                pass
-        adjusted_width = (max_length + 2) * 1.2
-        ws.column_dimensions[column_letter].width = min(adjusted_width, 50)  # 最大列宽限制
-    
-    # 添加工作表标题
-    title = f"企业信息数据 ({time.strftime('%Y-%m-%d %H:%M:%S')})"
-    ws.insert_rows(1)
-    ws["A1"] = title
-    ws.merge_cells(start_row=1, start_column=1, end_row=1, end_column=len(headers))
-    
-    title_font = Font(size=16, bold=True)
-    title_alignment = Alignment(horizontal="center", vertical="center")
-    ws["A1"].font = title_font
-    ws["A1"].alignment = title_alignment
-    
-    # 冻结首行和首列
-    ws.freeze_panes = ws["B2"]
-    
-    # 保存文件
+    # ==================== 写入数据 ====================
     try:
-        wb.save(filename)
-        print(f"数据已成功导出到 {filename}")
+        # 添加表头
+        ws.append(headers)
+        
+        # 设置表头样式
+        for col_idx, header in enumerate(headers, 1):
+            cell = ws.cell(row=1, column=col_idx)
+            cell.font = header_font
+            cell.fill = header_fill
+            cell.alignment = header_alignment
+            cell.border = thin_border
+        
+        # 写入数据行
+        for row_idx, item in enumerate(processed_data, 2):
+            row = []
+            for header in headers:
+                # 安全获取值
+                value = item.get(header, "")
+                
+                # 处理超长内容
+                if isinstance(value, str) and len(value) > 32767:
+                    value = value[:30000] + "...[数据截断]"
+                
+                row.append(value)
+            
+            ws.append(row)
+            
+            # 设置数据行样式
+            for col_idx in range(1, len(headers)+1):
+                cell = ws.cell(row=row_idx, column=col_idx)
+                cell.alignment = data_alignment
+                cell.border = thin_border
+                
+                # 自动识别数值类型
+                if isinstance(cell.value, (int, float)):
+                    cell.number_format = "0.00"
     except Exception as e:
-        print(f"导出Excel文件失败: {str(e)}")
-
+        print(f"写入Excel数据时发生错误: {str(e)}")
+        return
+    
+    # ==================== 格式优化 ====================
+    try:
+        # 自动调整列宽
+        for col_idx, header in enumerate(headers, 1):
+            max_length = 0
+            column = get_column_letter(col_idx)
+            
+            # 计算最大长度
+            for cell in ws[column]:
+                try:
+                    length = len(str(cell.value))
+                    if length > max_length:
+                        max_length = length
+                except:
+                    pass
+            
+            # 设置列宽(限制最大50字符)
+            adjusted_width = min(max_length + 2, 50)
+            ws.column_dimensions[column].width = adjusted_width
+        
+        # 添加标题行
+        title = f"企业信用数据 ({time.strftime('%Y-%m-%d')})"
+        ws.insert_rows(1)
+        ws.merge_cells(start_row=1, start_column=1, end_row=1, end_column=len(headers))
+        title_cell = ws.cell(row=1, column=1, value=title)
+        title_cell.font = Font(size=14, bold=True)
+        title_cell.alignment = Alignment(horizontal="center", vertical="center")
+        
+        # 冻结表头
+        ws.freeze_panes = "A2"
+    except Exception as e:
+        print(f"格式优化时发生错误: {str(e)}")
+    
+    # ==================== 保存文件 ====================
+    try:
+        # 检查文件名后缀
+        if not filename.endswith(".xlsx"):
+            filename += ".xlsx"
+            
+        # 检查目录是否存在
+        os.makedirs(os.path.dirname(filename), exist_ok=True)
+        
+        # 保存文件
+        wb.save(filename)
+        print(f"成功导出文件: {os.path.abspath(filename)}")
+        print(f"总数据量: {len(processed_data)}条")
+        print(f"列字段: {', '.join(headers)}")
+    except PermissionError:
+        print(f"错误: 文件 {filename} 被其他程序占用，请关闭后重试")
+    except Exception as e:
+        print(f"保存文件失败: {str(e)}")
+        
 def main():
     print("=== 启动数据获取程序 ===")
     session = requests.Session()
