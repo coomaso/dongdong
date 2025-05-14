@@ -114,7 +114,7 @@ def main():
             print(f"[步骤1] 生成时间戳: {timestamp}")
 
             # 请求验证码
-            code_url = f"http://106.15.60.27:22222/ycdc/bakCmisYcOrgan/getCreateCode?codeValue={timestamp}"
+            code_url = f"http://106.15.60.27:22222/ycdc/bakCmisYcOrgan/getCreateCode?codeValue=undefined"
             print(f"[步骤2] 请求验证码接口: {code_url}")
             
             code_response = safe_request(session, code_url).json()
