@@ -250,7 +250,11 @@ def export_to_excel(data, github_mode=False):
 
     # 处理最后一组
     if current_key:
-        merge_map[current_key] = (start_row, len(processed_data)+1)
+        end_row = len(processed_data) + 1
+        if start_row <= end_row:
+            merge_map[current_key] = (start_row, end_row)
+        else:
+            print(f"警告：无效的合并范围 {current_key} ({start_row}, {end_row})")
 
     # ==================== 设置单元格格式 ====================
     center_alignment = Alignment(horizontal='center', vertical='center', wrap_text=True)
@@ -292,7 +296,11 @@ def export_to_excel(data, github_mode=False):
         return filename
     except Exception as e:
         print(f"文件保存失败：{str(e)}")
+        # 打印详细错误信息
+        import traceback
+        traceback.print_exc()
         return None
+        
 def main():
     print("=== 启动数据获取程序 ===")
     session = requests.Session()
@@ -305,7 +313,8 @@ def main():
 
         # 获取第一页确定总数
         first_data, total = process_page(session, 1, current_code, current_ts)
-        total_pages = (total + PAGE_SIZE - 1) // PAGE_SIZE
+        total_pages = 10
+        #total_pages = (total + PAGE_SIZE - 1) // PAGE_SIZE
         print(f"[初始化] 总记录数: {total} | 总页数: {total_pages}")
 
         if total == 0:
@@ -355,7 +364,12 @@ def main():
         if all_data:
             saved_path = export_to_excel(all_data, github_mode=True)
             if saved_path:
-                print(f"::set-output name=file-path::{saved_path}")
+                github_output = os.getenv('GITHUB_OUTPUT')
+                if github_output:
+                    with open(github_output, 'a') as f:
+                        f.write(f'file-path={saved_path}\n')
+                else:
+                    print("::注意:: 未在GitHub Actions环境中，跳过输出设置")
         else:
             print("错误: 没有获取到任何有效数据，无法导出Excel")
     except Exception as e:
