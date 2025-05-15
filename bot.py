@@ -77,9 +77,16 @@ def main():
     with open(json_file, "r", encoding="utf-8") as f:
         json_data = json.load(f)
 
-    timestamp = json_data.get("时间戳", "未知时间")
+    timestamp_raw = json_data.get("TIMEamp", None)
+    if timestamp_raw:
+        dt = datetime.strptime(timestamp_raw, "%Y%m%d_%H%M%S")
+        dt_bj = dt + timedelta(hours=8)
+        timestamp = dt_bj.strftime("%Y-%m-%d")
+    else:
+        timestamp = "未知时间"
+        
     title = f"宜昌市企业诚信分值 Top10（{timestamp}）"
-    data_list = json_data.get("数据") or json_data.get("DATAlist")
+    data_list = json_data.get("DATAlist")
 
     if not data_list:
         print("JSON 内容为空或格式不正确")
