@@ -1,4 +1,4 @@
-name: Send WeChat Report
+name: 发送企业微信推送
 
 on:
   push:
