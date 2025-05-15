@@ -183,7 +183,7 @@ def export_to_excel(data, github_mode=False):
 
     # ==================== 数据处理 ====================
     def process_item(item):
-        """处理单个数据项"""
+        """强化数据处理，确保字段存在"""
         if item.get('eqtName') != '施工':
             return []
         
@@ -192,23 +192,28 @@ def export_to_excel(data, github_mode=False):
             'eqtName': item.get('eqtName', ''),
             'csf': int(float(item.get('csf', 0))),
             'orgId': item.get('orgId', ''),
-            'cecId': item.get('cecId', '')
+            'cecId': item.get('cecId', ''),
+            'zzmx': ''  # 确保zzmx字段始终存在
         }
 
         details = item.get('zzmxcxfArray', [])
         if not details:
+            # 返回带默认值的主信息
             return [main_info]
         
-        return [{
-            **main_info,
-            'zzmx': detail.get('zzmx', ''),
-            'cxdj': detail.get('cxdj', ''),
-            'score': int(float(detail.get('score', 0))),
-            'jcf': int(float(detail.get('jcf', 0))),
-            'zxjf': int(float(detail.get('zxjf', 0))),
-            'kf': int(float(detail.get('kf', 0))),
-            'eqlId': detail.get('eqlId', '')
-        } for detail in details]
+        processed = []
+        for detail in details:
+            processed.append({
+                **main_info,
+                'zzmx': detail.get('zzmx', ''),
+                'cxdj': detail.get('cxdj', ''),
+                'score': int(float(detail.get('score', 0))),
+                'jcf': int(float(detail.get('jcf', 0))),
+                'zxjf': int(float(detail.get('zxjf', 0))),
+                'kf': int(float(detail.get('kf', 0))),
+                'eqlId': detail.get('eqlId', '')
+            })
+        return processed
 
     # 生成基础数据
     processed_data = []
@@ -251,9 +256,16 @@ def export_to_excel(data, github_mode=False):
     # ==================== 构建各工作表 ====================
     for config in sheet_configs:
         # 创建工作表
-        if config["name"] == "企业信用数据汇总":
-            ws = wb.active
-            ws.title = config["name"]
+        # 修改过滤逻辑（使用get方法）
+        if config["name"] != "企业信用数据汇总":
+            sheet_data = sorted(
+                [d for d in processed_data 
+                 if str(d.get('zzmx', '')).startswith(config["prefix"])  # 安全访问
+                 and '级' in str(d.get('zzmx', ''))],
+                key=lambda x: x.get('score', 0),  # 安全获取score
+                reverse=True
+            )
+            print(f"分类 [{config['name']}] 数据量: {len(sheet_data)}")  # 调试日志
         else:
             ws = wb.create_sheet(title=config["name"])
         
@@ -333,8 +345,16 @@ def export_to_excel(data, github_mode=False):
     
     if github_mode:
         output_dir = os.path.join(os.getcwd(), "excel_output")
-        os.makedirs(output_dir, exist_ok=True)
+        # 确保目录创建成功
+        try:
+            os.makedirs(output_dir, exist_ok=True)
+            print(f"已创建输出目录: {output_dir}")
+        except Exception as e:
+            print(f"目录创建失败: {str(e)}")
+            raise
+        
         filename = os.path.join(output_dir, filename)
+        print(f"最终保存路径: {filename}")  # 路径调试
 
     try:
         # 删除默认创建的空白工作表
