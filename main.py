@@ -470,8 +470,8 @@ def main():
 
         # 获取第一页确定总数
         first_data, total = process_page(session, 1, current_code, current_ts)
-        total_pages = 100 #测试
-        #total_pages = (total + PAGE_SIZE - 1) // PAGE_SIZE
+        #total_pages = 100 #测试
+        total_pages = (total + PAGE_SIZE - 1) // PAGE_SIZE
         print(f"[初始化] 总记录数: {total} | 总页数: {total_pages}")
 
         if total == 0:
