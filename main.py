@@ -180,7 +180,38 @@ def export_to_excel(data, github_mode=False):
         top=Side(style="thin"),
         bottom=Side(style="thin")
     )
+    # ==================== 新增JSON生成逻辑 ====================
+    def generate_top_json(sorted_data, category_name, github_mode):
+        """生成前10名JSON数据"""
+        top_data = []
+        for idx, item in enumerate(sorted_data[:10], 1):
+            top_data.append({
+                "排名": idx,
+                "企业名称": item.get("cioName", ""),
+                "诚信分值": item.get("score", 0)
+            })
 
+        if not top_data:
+            print(f"警告: {category_name} 无数据，跳过JSON生成")
+            return None
+
+        # 构建文件名
+        timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+        json_filename = f"{category_name}_top10_{timestamp}.json"
+        
+        if github_mode:
+            output_dir = os.path.join(os.getcwd(), "excel_output")
+            json_filename = os.path.join(output_dir, json_filename)
+        
+        # 写入文件
+        try:
+            with open(json_filename, 'w', encoding='utf-8') as f:
+                json.dump(top_data, f, ensure_ascii=False, indent=2)
+            print(f"已生成JSON文件: {os.path.abspath(json_filename)}")
+            return json_filename
+        except Exception as e:
+            print(f"JSON文件生成失败: {str(e)}")
+            return None
     # ==================== 数据处理 ====================
     def process_item(item):
         """强化数据处理，确保字段存在"""
@@ -252,7 +283,15 @@ def export_to_excel(data, github_mode=False):
             "merge": False
         }
     ]
-
+    
+    # ==================== 文件输出配置 ====================
+    output_dir = os.getcwd()
+    if github_mode:
+        output_dir = os.path.join(output_dir, "excel_output")
+        os.makedirs(output_dir, exist_ok=True)
+    
+    json_files = []
+    
     # ==================== 构建各工作表 ====================
     # 先创建汇总表
     wb = Workbook()
@@ -304,11 +343,17 @@ def export_to_excel(data, github_mode=False):
             )
             print(f"过滤到数据量: {len(sheet_data)}")  # 调试日志
 
+            # 生成JSON（仅限指定工作表）
+            if config.get("generate_json"):
+                json_path = generate_top_json(sheet_data, config["name"], output_dir)
+                if json_path:
+                    json_files.append(json_path)
+
         # ========== 写入数据 ==========
         if len(sheet_data) == 0:
             print(f"警告: {config['name']} 无数据，跳过写入")
             continue
-            
+        # ==========合并单元格逻辑（仅汇总表）==========
         current_key = None
         start_row = 2
         
@@ -356,6 +401,7 @@ def export_to_excel(data, github_mode=False):
                         if end > start:
                             ws.merge_cells(f"{col_letter}{start}:{col_letter}{end}")
                             
+
     # ==================== 最终验证 ====================
     print("\n最终工作表列表:")
     for sheet in wb.sheetnames:
@@ -388,7 +434,14 @@ def export_to_excel(data, github_mode=False):
             
         wb.save(filename)
         print(f"文件已保存至：{os.path.abspath(filename)}")
-        return filename
+        print("包含的工作表:")
+        for sheet in wb.sheetnames:
+            print(f"- {sheet}")
+            
+        return {
+            "excel": filename,
+            "json": json_files
+        }
     except Exception as e:
         print(f"文件保存失败：{str(e)}")
         import traceback
@@ -407,8 +460,8 @@ def main():
 
         # 获取第一页确定总数
         first_data, total = process_page(session, 1, current_code, current_ts)
-        #total_pages = 10 #测试
-        total_pages = (total + PAGE_SIZE - 1) // PAGE_SIZE
+        total_pages = 10 #测试
+        #total_pages = (total + PAGE_SIZE - 1) // PAGE_SIZE
         print(f"[初始化] 总记录数: {total} | 总页数: {total_pages}")
 
         if total == 0:
