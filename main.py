@@ -268,7 +268,8 @@ def export_to_excel(data, github_mode=False):
             "name": "建筑工程总承包信用分排序",
             "prefix": "建筑业企业资质_施工总承包_建筑工程_",
             "freeze": 'B2',
-            "merge": False
+            "merge": False，
+            "generate_json": True  # 🎯 新增JSON生成标记
         },
         {
             "name": "市政公用工程信用分排序",
@@ -345,6 +346,7 @@ def export_to_excel(data, github_mode=False):
 
             # 生成JSON（仅限指定工作表）
             if config.get("generate_json"):
+                print(f"\n正在生成 {config['name']} 的JSON排行榜...")
                 json_path = generate_top_json(sheet_data, config["name"], output_dir)
                 if json_path:
                     json_files.append(json_path)
