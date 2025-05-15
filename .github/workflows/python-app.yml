@@ -36,24 +36,25 @@ jobs:
         # 生成时间戳并设置为输出变量
         ts=$(date +%Y%m%d%H%M)
         echo "ts=${ts}" >> $GITHUB_OUTPUT
-        
-        # 清理历史文件
+
+        # 清理历史输出文件
         mkdir -p excel_output
-        find excel_output/ -maxdepth 1 -type f -name "*.xlsx" -delete
-        
-        # 执行采集脚本
+        find excel_output/ -maxdepth 1 -type f \( -name "*.xlsx" -o -name "*.json" \) -delete
+
+        # 执行主脚本
         python3 main.py
-        
-        # 重命名生成的文件（添加时间戳）
+
+        # 查找输出文件
         original_file=$(ls excel_output/*.xlsx | head -n 1)
         new_file="excel_output/宜昌市信用数据_${ts}.xlsx"
         [ -f "$original_file" ] && mv "$original_file" "$new_file"
-        
-        # 验证文件生成
+
+        # 验证文件生成成功
         if [ ! -f "$new_file" ]; then
             echo "::error:: 文件生成失败"
             exit 1
         fi
+
         echo "file-path=${new_file}" >> $GITHUB_OUTPUT
 
     - name: 上传数据文件
@@ -65,26 +66,29 @@ jobs:
 
     - name: 提交到仓库
       run: |
-        # 配置Git身份
+        # 配置 Git 身份
         git config user.name "GitHub Actions"
         git config user.email "actions@github.com"
-        
-        # 创建历史数据目录
-        mkdir -p historical_data
-        
+
+        # 构建历史目录
+        ts="${{ steps.export.outputs.ts }}"
+        filename=$(basename "${{ steps.export.outputs.file-path }}")
+        month_dir=$(date +'%Y-%m')
+
+        mkdir -p "historical_data/$month_dir"
+
         # 复制文件到历史目录
-        if [ -f "${{ steps.export.outputs.file-path }}" ]; then
-          cp "${{ steps.export.outputs.file-path }}" "historical_data/"
-        else
-          echo "::warning:: 未找到需要提交的文件"
-          exit 0
-        fi
-        
-        # 提交变更
+        cp "${{ steps.export.outputs.file-path }}" "historical_data/$month_dir/$filename"
+
+        # 添加变更（如果有）
         git add .
-        git commit -m "📊 信用数据更新 [${{ steps.export.outputs.ts }}]" || echo "没有变更可提交"
         
-        # 强制推送（注意安全）
-        git push origin main
+        # 检查是否有实际变更再提交
+        if git diff --cached --quiet; then
+          echo "✅ 没有变更，跳过提交"
+        else
+          git commit -m "📊 信用数据更新 [${ts}]"
+          git push origin main
+        fi
       env:
         GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
