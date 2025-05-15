@@ -1,13 +1,23 @@
 import os
-from datetime import datetime, timedelta
 import json
 import requests
 from glob import glob
+from datetime import datetime, timedelta
+import urllib.parse
 
 # ======= 企业微信机器人 Webhook 地址，从环境变量读取 =======
 WEBHOOK_URL = os.getenv("WEBHOOK_URL")
 if not WEBHOOK_URL:
     raise ValueError("环境变量 WEBHOOK_URL 未设置，请设置你的企业微信机器人 Webhook 地址")
+
+# ======= 从 WEBHOOK_URL 中提取 key =======
+def get_key_from_webhook(url):
+    parsed = urllib.parse.urlparse(url)
+    query = urllib.parse.parse_qs(parsed.query)
+    key = query.get('key', [None])[0]
+    if not key:
+        raise ValueError("无法从 WEBHOOK_URL 中提取 key")
+    return key
 
 # ======= 获取最新的文件路径 =======
 def get_latest_file(directory, pattern):
@@ -19,47 +29,44 @@ def get_latest_file(directory, pattern):
 # ======= 发送文本消息，企业名包含“盛荣”则红色高亮 =======
 def send_text_msg(title, data_list):
     content = f"**📊 {title}**\n\n"
-    # 企业微信支持简单 markdown，红色字体用 > <font color="red">text</font>
     for item in data_list:
         name = item['企业名称']
         score = item['诚信分值']
         rank = item['排名']
         if "盛荣" in name:
-            # 红色高亮
-            line = f"{rank}. > **<font color=\"red\">{name}</font>** （{score}分）\n"
+            line = f"**<font color=\"red\">{rank}. {name}（{score}分）\n</font>**"
         else:
             line = f"{rank}. {name}（{score}分）\n"
         content += line
 
     payload = {
-        "msgtype": "markdown",
-        "markdown": {
-            "content": content
-        }
+        "msgtype": "text",
+        "markdown": {"content": content}
     }
     r = requests.post(WEBHOOK_URL, json=payload)
     r.raise_for_status()
+    print("✅ 文本消息已发送")
 
 # ======= 上传文件到企业微信并发送 =======
 def send_file_msg(filepath):
     filename = os.path.basename(filepath)
-    # 获取媒体 ID
-    upload_url = f"{WEBHOOK_URL}&type=file"
+    key = get_key_from_webhook(WEBHOOK_URL)
+    upload_url = f"https://qyapi.weixin.qq.com/cgi-bin/webhook/upload_media?key={key}&type=file"
+
     with open(filepath, 'rb') as f:
         files = {'file': (filename, f, 'application/octet-stream')}
         res = requests.post(upload_url, files=files)
     res.raise_for_status()
-    media_id = res.json().get("media_id")
+    res_json = res.json()
+
+    media_id = res_json.get("media_id")
     if not media_id:
         print(f"❌ 上传文件失败：{res.text}")
         return
 
-    # 发送文件消息
     payload = {
         "msgtype": "file",
-        "file": {
-            "media_id": media_id
-        }
+        "file": {"media_id": media_id}
     }
     r = requests.post(WEBHOOK_URL, json=payload)
     r.raise_for_status()
@@ -69,7 +76,7 @@ def send_file_msg(filepath):
 def main():
     output_dir = "excel_output"
 
-    # 获取最新的 JSON 文件并读取内容
+    # 获取最新 JSON 文件
     json_file = get_latest_file(output_dir, "*.json")
     if not json_file:
         print("未找到 JSON 文件")
@@ -81,11 +88,11 @@ def main():
     timestamp_raw = json_data.get("TIMEamp", None)
     if timestamp_raw:
         dt = datetime.strptime(timestamp_raw, "%Y%m%d_%H%M%S")
-        dt_bj = dt + timedelta(hours=8)
+        dt_bj = dt + timedelta(hours=8)  # 转北京时间
         timestamp = dt_bj.strftime("%Y-%m-%d")
     else:
         timestamp = "未知时间"
-        
+
     title = f"宜昌市企业诚信分值 Top10（{timestamp}）"
     data_list = json_data.get("DATAlist")
 
@@ -96,7 +103,7 @@ def main():
     # 发送文本消息
     send_text_msg(title, data_list)
 
-    # 只发送最新的 XLSX 附件
+    # 发送最新的 XLSX 文件
     filepath = get_latest_file(output_dir, "*.xlsx")
     if filepath:
         send_file_msg(filepath)
