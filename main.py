@@ -268,7 +268,7 @@ def export_to_excel(data, github_mode=False):
             "name": "建筑工程总承包信用分排序",
             "prefix": "建筑业企业资质_施工总承包_建筑工程_",
             "freeze": 'B2',
-            "merge": False，
+            "merge": False,
             "generate_json": True  # 🎯 新增JSON生成标记
         },
         {
