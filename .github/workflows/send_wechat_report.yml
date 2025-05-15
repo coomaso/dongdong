@@ -1,0 +1,31 @@
+name: Send WeChat Report
+
+on:
+  push:
+    branches:
+      - main
+  schedule:
+    - cron: '0 1 * * *'  # 每天早上9点自动执行
+
+jobs:
+  send_report:
+    runs-on: ubuntu-latest
+
+    steps:
+    - name: Checkout repository
+      uses: actions/checkout@v3
+
+    - name: Setup Python 3.9
+      uses: actions/setup-python@v4
+      with:
+        python-version: '3.9'
+
+    - name: Install dependencies
+      run: |
+        python -m pip install --upgrade pip
+        pip install requests
+
+    - name: Run bot.py script
+      env:
+        WEBHOOK_URL: ${{ secrets.WEBHOOK_URL }}
+      run: python bot.py
