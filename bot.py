@@ -4,7 +4,7 @@ import requests
 from glob import glob
 
 # ======= 企业微信机器人 Webhook 地址=======
-WEBHOOK_URL = "https://qyapi.weixin.qq.com/cgi-bin/webhook/send?key=eead5d0e-1f6e-438d-a33e-abf4ca6f118b"
+WEBHOOK_URL = os.getenv("WEBHOOK_URL")
 
 # ======= 获取最新的文件路径 =======
 def get_latest_file(directory, pattern):
