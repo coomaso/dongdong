@@ -34,9 +34,9 @@ def send_text_msg(title, data_list):
         score = item['诚信分值']
         rank = item['排名']
         if "盛荣" in name:
-            line = f"**<font color=\"red\">{rank}. {name} {score}分\n</font>**"
+            line = f"> **<font color=\"red\">{rank}. {name} {score}分\n</font>**"
         else:
-            line = f"{rank}. {name} {score}分\n"
+            line = f"> {rank}. {name} {score}分\n"
         content += line
 
     payload = {
