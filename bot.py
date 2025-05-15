@@ -40,7 +40,7 @@ def send_text_msg(title, data_list):
         content += line
 
     payload = {
-        "msgtype": "text",
+        "msgtype": "markdown",
         "markdown": {"content": content}
     }
     r = requests.post(WEBHOOK_URL, json=payload)
