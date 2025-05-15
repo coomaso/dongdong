@@ -229,7 +229,7 @@ def export_to_excel(data, github_mode=False):
     sheet_configs = [
         {
             "name": "企业信用数据汇总",
-            "data": processed_data,
+            "prefix": None,
             "freeze": 'B2',
             "merge": True
         },
@@ -254,20 +254,25 @@ def export_to_excel(data, github_mode=False):
     ]
 
     # ==================== 构建各工作表 ====================
+    # 先创建汇总表
+    wb = Workbook()
+    summary_sheet = wb.active
+    summary_sheet.title = sheet_configs[0]["name"]
+    
+    # 然后创建其他工作表
+    for config in sheet_configs[1:]:
+        ws = wb.create_sheet(title=config["name"])
+        print(f"已创建工作表: {ws.title}")  # 调试日志
+
+    # ==================== 填充各工作表 ====================
     for config in sheet_configs:
-        # 创建工作表
-        # 修改过滤逻辑（使用get方法）
-        if config["name"] != "企业信用数据汇总":
-            sheet_data = sorted(
-                [d for d in processed_data 
-                 if str(d.get('zzmx', '')).startswith(config["prefix"])  # 安全访问
-                 and '级' in str(d.get('zzmx', ''))],
-                key=lambda x: x.get('score', 0),  # 安全获取score
-                reverse=True
-            )
-            print(f"分类 [{config['name']}] 数据量: {len(sheet_data)}")  # 调试日志
+        # 获取工作表对象
+        if config["name"] == "企业信用数据汇总":
+            ws = summary_sheet
         else:
-            ws = wb.create_sheet(title=config["name"])
+            ws = wb[config["name"]]
+        
+        print(f"\n正在处理工作表: {ws.title}")  # 调试日志
         
         # 设置冻结窗格
         ws.freeze_panes = config["freeze"]
@@ -275,6 +280,7 @@ def export_to_excel(data, github_mode=False):
         # ========== 写入表头 ==========
         headers = [col['name'] for col in COLUMNS]
         ws.append(headers)
+        print(f"表头写入完成，行数: {ws.max_row}")  # 调试日志
         
         # 应用表头样式
         for col_idx, col in enumerate(COLUMNS, 1):
@@ -285,22 +291,32 @@ def export_to_excel(data, github_mode=False):
 
         # ========== 处理数据 ==========
         if config["name"] == "企业信用数据汇总":
-            sheet_data = config["data"]
-            merge_map = {}  # 仅汇总表需要合并
+            sheet_data = processed_data
+            merge_map = {}
         else:
             # 过滤排序数据
             sheet_data = sorted(
                 [d for d in processed_data 
-                 if d['zzmx'].startswith(config["prefix"]) and '级' in d['zzmx']],
-                key=lambda x: x['score'], 
+                 if str(d.get('zzmx', '')).startswith(config["prefix"]) 
+                 and '级' in str(d.get('zzmx', ''))],
+                key=lambda x: x.get('score', 0), 
                 reverse=True
             )
+            print(f"过滤到数据量: {len(sheet_data)}")  # 调试日志
 
         # ========== 写入数据 ==========
+        if len(sheet_data) == 0:
+            print(f"警告: {config['name']} 无数据，跳过写入")
+            continue
+            
         current_key = None
         start_row = 2
         
         for row_idx, row_data in enumerate(sheet_data, 2):
+            # 调试：打印前3行数据
+            if row_idx <= 4:
+                print(f"写入行 {row_idx} 数据: {row_data['zzmx'][:20]}...")
+                
             # 企业信用数据汇总需要合并单元格
             if config["merge"]:
                 unique_key = f"{row_data['orgId']}-{row_data['cecId']}"
@@ -339,6 +355,15 @@ def export_to_excel(data, github_mode=False):
                     for (start, end) in merge_map.values():
                         if end > start:
                             ws.merge_cells(f"{col_letter}{start}:{col_letter}{end}")
+                            
+    # ==================== 最终验证 ====================
+    print("\n最终工作表列表:")
+    for sheet in wb.sheetnames:
+        print(f"- {sheet}")
+        
+    print(f"\n各工作表数据量:")
+    for sheet in wb.worksheets:
+        print(f"{sheet.title}: {sheet.max_row-1} 行")  # 减去表头
 
     # ==================== 文件保存 ====================
     filename = f"宜昌市信用评价信息_{timestamp}.xlsx" if github_mode else "宜昌市信用评价信息.xlsx"
