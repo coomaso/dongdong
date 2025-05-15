@@ -140,7 +140,7 @@ def process_page(session: requests.Session, page: int, code: str, timestamp: str
 
 def export_to_excel(data, github_mode=False):
     """
-    专业级Excel导出函数（修复科学计数法问题+优化格式）
+    专业级Excel导出函数（多工作表分类排序）
     :param data: 待导出数据列表，每个元素为字典格式
     :param github_mode: 是否启用GitHub Actions模式
     :return: 生成的Excel文件绝对路径
@@ -161,58 +161,6 @@ def export_to_excel(data, github_mode=False):
         {'id': 'cecId',      'name': '信用档案ID', 'width': 30,  'merge': True,  'align': 'center'}
     ]
 
-    # ==================== 数据预处理 ====================
-    def process_item(item):
-        """处理单个数据项（修复数值转换问题）"""
-        # 主信息处理
-        main_info = {
-            'cioName': item.get('cioName', ''),
-            'eqtName': item.get('eqtName', ''),
-            'csf': int(float(item.get('csf', 0))),  # 转换为整数
-            'orgId': item.get('orgId', ''),
-            'cecId': item.get('cecId', '')
-        }
-        
-        # 新增过滤条件：仅处理资质类别为"施工"的项
-        if main_info['eqtName'] != '施工':
-            return []
-            
-        # 处理资质明细
-        details = item.get('zzmxcxfArray', [])
-        if not details:
-            return [main_info]
-        
-        processed = []
-        for detail in details:
-            # 转换所有数值为整数
-            processed.append({
-                **main_info,
-                'zzmx': detail.get('zzmx', ''),
-                'cxdj': detail.get('cxdj', ''),
-                'score': int(float(detail.get('score', 0))),
-                'jcf': int(float(detail.get('jcf', 0))),
-                'zxjf': int(float(detail.get('zxjf', 0))),
-                'kf': int(float(detail.get('kf', 0))),
-                'eqlId': detail.get('eqlId', '')
-            })
-        return processed
-
-    # 生成平铺数据
-    processed_data = []
-    for item in data:
-        if isinstance(item, dict):
-            processed_data.extend(process_item(item))
-
-    # ==================== 创建Workbook ====================
-    wb = Workbook()
-    ws = wb.active
-    ws.title = "企业信用数据"
-    ws.freeze_panes = 'B2'  # 冻结首行
-    
-    # ==================== 构建表头 ====================
-    headers = [col['name'] for col in COLUMNS]
-    ws.append(headers)
-
     # ==================== 样式配置 ====================
     header_style = {
         'font': Font(bold=True, color="FFFFFF"),
@@ -226,82 +174,178 @@ def export_to_excel(data, github_mode=False):
         )
     }
 
-    # 应用表头样式
-    for col_idx, col in enumerate(COLUMNS, 1):
-        cell = ws.cell(row=1, column=col_idx)
-        for attr, value in header_style.items():
-            setattr(cell, attr, value)
-        ws.column_dimensions[get_column_letter(col_idx)].width = col['width']
+    cell_border = Border(
+        left=Side(style="thin"),
+        right=Side(style="thin"),
+        top=Side(style="thin"),
+        bottom=Side(style="thin")
+    )
 
-    # ==================== 写入数据 ====================
-    merge_map = {}  # 合并范围记录 {unique_key: (start_row, end_row)}
-    current_key = None
-    start_row = 2
-
-    for row_idx, row_data in enumerate(processed_data, 2):
-        # 生成唯一标识
-        unique_key = f"{row_data['orgId']}-{row_data['cecId']}"
+    # ==================== 数据处理 ====================
+    def process_item(item):
+        """处理单个数据项"""
+        if item.get('eqtName') != '施工':
+            return []
         
-        # 记录合并范围
-        if unique_key != current_key:
-            if current_key is not None:
-                merge_map[current_key] = (start_row, row_idx-1)
-            current_key = unique_key
-            start_row = row_idx
-        
-        # 写入数据行
-        row = [row_data.get(col['id'], '') for col in COLUMNS]
-        ws.append(row)
+        main_info = {
+            'cioName': item.get('cioName', ''),
+            'eqtName': item.get('eqtName', ''),
+            'csf': int(float(item.get('csf', 0))),
+            'orgId': item.get('orgId', ''),
+            'cecId': item.get('cecId', '')
+        }
 
-    # 处理最后一组
-    if current_key:
-        end_row = len(processed_data) + 1
-        if start_row <= end_row:
-            merge_map[current_key] = (start_row, end_row)
+        details = item.get('zzmxcxfArray', [])
+        if not details:
+            return [main_info]
+        
+        return [{
+            **main_info,
+            'zzmx': detail.get('zzmx', ''),
+            'cxdj': detail.get('cxdj', ''),
+            'score': int(float(detail.get('score', 0))),
+            'jcf': int(float(detail.get('jcf', 0))),
+            'zxjf': int(float(detail.get('zxjf', 0))),
+            'kf': int(float(detail.get('kf', 0))),
+            'eqlId': detail.get('eqlId', '')
+        } for detail in details]
+
+    # 生成基础数据
+    processed_data = []
+    for item in data:
+        if isinstance(item, dict):
+            processed_data.extend(process_item(item))
+
+    # ==================== 创建主工作簿 ====================
+    wb = Workbook()
+    timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+    
+    # ==================== 工作表配置 ====================
+    sheet_configs = [
+        {
+            "name": "企业信用数据汇总",
+            "data": processed_data,
+            "freeze": 'B2',
+            "merge": True
+        },
+        {
+            "name": "建筑工程总承包信用分排序",
+            "prefix": "建筑业企业资质_施工总承包_建筑工程_",
+            "freeze": 'B2',
+            "merge": False
+        },
+        {
+            "name": "市政公用工程信用分排序",
+            "prefix": "建筑业企业资质_施工总承包_市政公用工程_",
+            "freeze": 'B2',
+            "merge": False
+        },
+        {
+            "name": "装修装饰工程信用分排序",
+            "prefix": "建筑业企业资质_专业承包_建筑装修装饰工程_",
+            "freeze": 'B2',
+            "merge": False
+        }
+    ]
+
+    # ==================== 构建各工作表 ====================
+    for config in sheet_configs:
+        # 创建工作表
+        if config["name"] == "企业信用数据汇总":
+            ws = wb.active
+            ws.title = config["name"]
         else:
-            print(f"警告：无效的合并范围 {current_key} ({start_row}, {end_row})")
+            ws = wb.create_sheet(title=config["name"])
+        
+        # 设置冻结窗格
+        ws.freeze_panes = config["freeze"]
+        
+        # ========== 写入表头 ==========
+        headers = [col['name'] for col in COLUMNS]
+        ws.append(headers)
+        
+        # 应用表头样式
+        for col_idx, col in enumerate(COLUMNS, 1):
+            cell = ws.cell(row=1, column=col_idx)
+            for attr, value in header_style.items():
+                setattr(cell, attr, value)
+            ws.column_dimensions[get_column_letter(col_idx)].width = col['width']
 
-    # ==================== 设置单元格格式 ====================
-    center_alignment = Alignment(horizontal='center', vertical='center', wrap_text=True)
-    number_columns = [col['name'] for col in COLUMNS if col.get('format')]
+        # ========== 处理数据 ==========
+        if config["name"] == "企业信用数据汇总":
+            sheet_data = config["data"]
+            merge_map = {}  # 仅汇总表需要合并
+        else:
+            # 过滤排序数据
+            sheet_data = sorted(
+                [d for d in processed_data 
+                 if d['zzmx'].startswith(config["prefix"]) and '级' in d['zzmx']],
+                key=lambda x: x['score'], 
+                reverse=True
+            )
 
-    for row in ws.iter_rows(min_row=2):
-        for cell in row:
-            col_def = COLUMNS[cell.column-1]
+        # ========== 写入数据 ==========
+        current_key = None
+        start_row = 2
+        
+        for row_idx, row_data in enumerate(sheet_data, 2):
+            # 企业信用数据汇总需要合并单元格
+            if config["merge"]:
+                unique_key = f"{row_data['orgId']}-{row_data['cecId']}"
+                if unique_key != current_key:
+                    if current_key is not None:
+                        merge_map[current_key] = (start_row, row_idx-1)
+                    current_key = unique_key
+                    start_row = row_idx
             
-            # 设置对齐
-            alignment = center_alignment if col_def['align'] == 'center' else Alignment(vertical='center')
-            cell.alignment = alignment
+            # 写入行数据
+            row = [row_data.get(col['id'], '') for col in COLUMNS]
+            ws.append(row)
             
-            # 设置数字格式
-            if col_def['name'] in number_columns:
-                cell.number_format = col_def['format']
+            # 设置单元格样式
+            for col_idx in range(1, len(COLUMNS)+1):
+                cell = ws.cell(row=row_idx, column=col_idx)
+                cell.border = cell_border
+                col_def = COLUMNS[col_idx-1]
+                if col_def['align'] == 'center':
+                    cell.alignment = Alignment(horizontal='center', vertical='center')
+                if col_def.get('format'):
+                    cell.number_format = col_def['format']
 
-    # ==================== 合并单元格 ====================
-    for col in COLUMNS:
-        if col['merge']:
-            col_letter = get_column_letter(COLUMNS.index(col)+1)
-            for (start, end) in merge_map.values():
-                if end > start:
-                    ws.merge_cells(f"{col_letter}{start}:{col_letter}{end}")
+        # ========== 合并单元格（仅汇总表）==========
+        if config["merge"]:
+            # 处理最后一组
+            if current_key:
+                end_row = len(sheet_data) + 1
+                if start_row <= end_row:
+                    merge_map[current_key] = (start_row, end_row)
+            
+            # 执行合并
+            for col in COLUMNS:
+                if col['merge']:
+                    col_letter = get_column_letter(COLUMNS.index(col)+1)
+                    for (start, end) in merge_map.values():
+                        if end > start:
+                            ws.merge_cells(f"{col_letter}{start}:{col_letter}{end}")
 
     # ==================== 文件保存 ====================
-    filename = "宜昌市信用评价信息.xlsx"
+    filename = f"宜昌市信用评价信息_{timestamp}.xlsx" if github_mode else "宜昌市信用评价信息.xlsx"
+    
     if github_mode:
         output_dir = os.path.join(os.getcwd(), "excel_output")
         os.makedirs(output_dir, exist_ok=True)
-        filename = os.path.join(
-            output_dir,
-            f"宜昌市信用评价信息_{datetime.now().strftime('%Y%m%d_%H%M%S')}.xlsx"
-        )
+        filename = os.path.join(output_dir, filename)
 
     try:
+        # 删除默认创建的空白工作表
+        if "Sheet" in wb.sheetnames:
+            del wb["Sheet"]
+            
         wb.save(filename)
         print(f"文件已保存至：{os.path.abspath(filename)}")
         return filename
     except Exception as e:
         print(f"文件保存失败：{str(e)}")
-        # 打印详细错误信息
         import traceback
         traceback.print_exc()
         return None
