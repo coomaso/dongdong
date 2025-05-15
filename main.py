@@ -183,26 +183,33 @@ def export_to_excel(data, github_mode=False):
     # ==================== 新增JSON生成逻辑 ====================
     def generate_top_json(sorted_data, category_name, github_mode):
         """生成前10名JSON数据"""
-        top_data = []
+        timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+        data_list = []
+    
         for idx, item in enumerate(sorted_data[:10], 1):
-            top_data.append({
+            data_list.append({
                 "排名": idx,
                 "企业名称": item.get("cioName", ""),
                 "诚信分值": item.get("score", 0)
             })
-
-        if not top_data:
+    
+        if not data_list:
             print(f"警告: {category_name} 无数据，跳过JSON生成")
             return None
-
+    
+        # 构建包含时间戳的结构
+        top_data = {
+            "TIMEamp": timestamp,
+            "DATAlist": data_list
+        }
+    
         # 构建文件名
-        timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
-        json_filename = f"{category_name}_top10_{timestamp}.json"
+        json_filename = f"{category_name}_top10.json"
         
         if github_mode:
             output_dir = os.path.join(os.getcwd(), "excel_output")
             json_filename = os.path.join(output_dir, json_filename)
-        
+    
         # 写入文件
         try:
             with open(json_filename, 'w', encoding='utf-8') as f:
@@ -212,6 +219,7 @@ def export_to_excel(data, github_mode=False):
         except Exception as e:
             print(f"JSON文件生成失败: {str(e)}")
             return None
+
     # ==================== 数据处理 ====================
     def process_item(item):
         """强化数据处理，确保字段存在"""
