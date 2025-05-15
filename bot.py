@@ -28,15 +28,15 @@ def get_latest_file(directory, pattern):
 
 # ======= 发送文本消息，企业名包含“盛荣”则红色高亮 =======
 def send_text_msg(title, data_list):
-    content = f"**📊 {title}**\n\n"
+    content = f"##📊 {title}##\n\n"
     for item in data_list:
         name = item['企业名称']
         score = item['诚信分值']
         rank = item['排名']
         if "盛荣" in name:
-            line = f"**<font color=\"red\">{rank}. {name}（{score}分）\n</font>**"
+            line = f"**<font color=\"red\">{rank}. {name} {score}分\n</font>**"
         else:
-            line = f"{rank}. {name}（{score}分）\n"
+            line = f"{rank}. {name} {score}分\n"
         content += line
 
     payload = {
@@ -93,7 +93,7 @@ def main():
     else:
         timestamp = "未知时间"
 
-    title = f"宜昌市企业诚信分值 Top10（{timestamp}）"
+    title = f"宜昌施工总承包诚信分 Top10 {timestamp}"
     data_list = json_data.get("DATAlist")
 
     if not data_list:
