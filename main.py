@@ -172,7 +172,11 @@ def export_to_excel(data, github_mode=False):
             'orgId': item.get('orgId', ''),
             'cecId': item.get('cecId', '')
         }
-
+        
+        # 新增过滤条件：仅处理资质类别为"施工"的项
+        if main_info['eqtName'] != '施工':
+            return []
+            
         # 处理资质明细
         details = item.get('zzmxcxfArray', [])
         if not details:
@@ -203,7 +207,7 @@ def export_to_excel(data, github_mode=False):
     wb = Workbook()
     ws = wb.active
     ws.title = "企业信用数据"
-    ws.freeze_panes = 'A2'  # 冻结首行
+    ws.freeze_panes = 'B2'  # 冻结首行
     
     # ==================== 构建表头 ====================
     headers = [col['name'] for col in COLUMNS]
