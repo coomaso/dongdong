@@ -28,7 +28,7 @@ def get_latest_file(directory, pattern):
 
 # ======= 发送文本消息，企业名包含“盛荣”则红色高亮 =======
 def send_text_msg(title, data_list):
-    content = f"##📊 {title}##\n\n"
+    content = f"##📊 {title}\n\n"
     for item in data_list:
         name = item['企业名称']
         score = item['诚信分值']
