@@ -3,7 +3,8 @@ name: 发送企业微信推送
 on:
   schedule:
     - cron: '0 1 * * *'  # 每天早上9点自动执行
-
+  push:
+    branches: [ "main" ]
 jobs:
   send_report:
     runs-on: ubuntu-latest
