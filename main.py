@@ -184,23 +184,28 @@ def export_to_excel(data, github_mode=False):
             bottom=Side(style="thin")
         )
     }
-    # 新增统一单元格样式
-    cell_alignment = Alignment(
-        vertical='center',  # 强制垂直居中
-        wrap_text=True      # 允许自动换行
-    )
     cell_border = Border(
         left=Side(style="thin"),
         right=Side(style="thin"),
         top=Side(style="thin"),
         bottom=Side(style="thin")
     )
+    
+    def get_cell_alignment(horizontal='left'):
+        """动态创建对齐对象"""
+        return Alignment(
+            vertical='center',
+            horizontal=horizontal,
+            wrap_text=True
+        )
+    
     # ==================== 新增JSON生成逻辑 ====================
     def generate_top_json(sorted_data, category_name, github_mode):
         """生成前10名JSON数据"""
-        timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
-        data_list = []
-    
+        utc8_offset = timezone(timedelta(hours=8))
+        timestamp = datetime.now(utc8_offset).strftime("%Y%m%d_%H%M%S")
+        
+        data_list = []    
         for idx, item in enumerate(sorted_data[:10], 1):
             data_list.append({
                 "排名": idx,
@@ -329,7 +334,7 @@ def export_to_excel(data, github_mode=False):
         ws = wb.create_sheet(title=config["name"])
         print(f"已创建工作表: {ws.title}")  # 调试日志
 
-    # ==================== 填充各工作表 ====================
+    # ==================== 填充每个工作表 ====================
     for config in sheet_configs:
         # 获取工作表对象
         if config["name"] == "企业信用数据汇总":
@@ -387,7 +392,7 @@ def export_to_excel(data, github_mode=False):
         for row_idx, row_data in enumerate(sheet_data, 2):
             # 调试：打印前3行数据
             if row_idx <= 4:
-                print(f"写入行 {row_idx} 数据: {row_data['zzmx'][:20]}...")
+                print(f"写入行 {row_idx} 数据: {row_data['zzmx'][:30]}...")
                 
             # 企业信用数据汇总需要合并单元格
             if config["merge"]:
@@ -411,9 +416,7 @@ def export_to_excel(data, github_mode=False):
                 col_def = COLUMNS[col_idx-1]
                 
                 # 设置对齐方式
-                cell.alignment = cell_alignment.copy(
-                    horizontal=col_def['align']  # 保持原有水平对齐
-                )
+                cell.alignment = get_cell_alignment(col_def['align'])
                 
                 # 设置数字格式
                 if col_def.get('format'):
@@ -422,28 +425,21 @@ def export_to_excel(data, github_mode=False):
             # ==================== 优化合并单元格样式 ====================
             # 在合并单元格后增加样式重设
             if config["merge"]:
+                if current_key:
+                    end_row = len(sheet_data) + 1
+                    merge_map[current_key] = (start_row, end_row)
+                
                 for col in COLUMNS:
                     if col['merge']:
                         col_letter = get_column_letter(COLUMNS.index(col)+1)
                         for (start, end) in merge_map.values():
                             if end > start:
-                                # 获取合并区域
                                 merge_range = f"{col_letter}{start}:{col_letter}{end}"
-                                
-                                # 先取消合并（防止样式覆盖问题）
-                                ws.unmerge_cells(merge_range)
-                                
-                                # 重新合并并设置样式
                                 ws.merge_cells(merge_range)
-                                top_cell = ws[f"{col_letter}{start}"]
-                                
-                                # 同步样式到整个合并区域
+                                # 同步合并区域样式
                                 for row in ws[merge_range]:
                                     for cell in row:
-                                        cell.alignment = top_cell.alignment
-                                        cell.font = top_cell.font.copy()
-                                        cell.border = top_cell.border.copy()
-                                        cell.fill = top_cell.fill.copy()
+                                        cell.alignment = get_cell_alignment(col['align'])
                             
 
     # ==================== 最终验证 ====================
