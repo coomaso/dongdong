@@ -104,39 +104,50 @@ def parse_response_data(encrypted_data: str) -> dict:
         return {"error": str(e)}
 
 def process_page(session: requests.Session, page: int, code: str, timestamp: str) -> tuple:
-    """处理单个页面并返回数据"""
-    page_url = (
-        "http://106.15.60.27:22222/ycdc/bakCmisYcOrgan/getCurrentIntegrityPage"
-        f"?pageSize={PAGE_SIZE}&cioName=%E5%85%AC%E5%8F%B8&page={page}"
-        f"&code={quote(code)}&codeValue={timestamp}"
-    )
+    """处理单个页面并返回数据，包含重试机制"""
+    max_retries = 3
+    current_code = code
+    current_timestamp = timestamp
 
-    try:
-        response = safe_request(session, page_url)
-        page_response = response.json()
-        print(f"第 {page} 页API响应状态: {page_response.get('code', '未知')}")  # 打印响应状态
+    for attempt in range(max_retries + 1):
+        page_url = (
+            "http://106.15.60.27:22222/ycdc/bakCmisYcOrgan/getCurrentIntegrityPage"
+            f"?pageSize={PAGE_SIZE}&cioName=%E5%85%AC%E5%8F%B8&page={page}"
+            f"&code={quote(current_code)}&codeValue={current_timestamp}"
+        )
 
-        if "data" not in page_response or not page_response["data"]:
-            print(f"第 {page} 页数据为空，触发验证码刷新")
-            raise RuntimeError("empty response data")
+        try:
+            # 发送带当前参数的请求
+            response = safe_request(session, page_url)
+            page_response = response.json()
+            status = page_response.get('code', '未知')
+            print(f"第 {page} 页 请求#{attempt+1} 响应状态: {status}")
 
-        page_data = parse_response_data(page_response["data"])
-        
-        if "error" in page_data:
-            print(f"第 {page} 页数据解析错误: {page_data['error']}")
-            raise RuntimeError(f"invalid page data: {page_data['error']}")
-        
-        records = page_data.get("data", [])
-        print(f"第 {page} 页解析出 {len(records)} 条记录")  # 明确记录数量
-        
-        # 检查解析出的数据是否有效
-        if not records:
-            print(f"警告: 第 {page} 页解析出空记录列表")
+            # 空数据检查
+            if "data" not in page_response or not page_response["data"]:
+                print(f"空数据响应，准备重试（剩余重试次数: {max_retries - attempt}）")
+                if attempt < max_retries:# 重试三次
+                    response = safe_request(session, page_url)
+                    page_response = response.json()
+                    continue
+                raise RuntimeError("连续空响应，终止重试")
+
+            # 数据解析
+            page_data = parse_response_data(page_response["data"])
             
-        return records, page_data.get("total", 0)
-    except Exception as e:
-        print(f"第 {page} 页处理失败: {str(e)}")
-        raise
+            records = page_data.get("data", [])
+            print(f"第 {page} 页解析出 {len(records)} 条记录")  # 明确记录数量
+            
+            # 检查解析出的数据是否有效
+            if not records:
+                print(f"警告: 第 {page} 页解析出空记录列表")
+                
+            return records, page_data.get("total", 0)
+        except Exception as e:
+            print(f"第 {page} 页处理失败: {str(e)}")
+            raise
+
+    raise RuntimeError("超过最大重试次数")
 
 def export_to_excel(data, github_mode=False):
     """
@@ -152,10 +163,10 @@ def export_to_excel(data, github_mode=False):
         {'id': 'csf',        'name': '初始分',     'width': 12,  'merge': True,  'align': 'center', 'format': '0'},
         {'id': 'zzmx',       'name': '资质明细',   'width': 50,  'merge': False, 'align': 'left'},
         {'id': 'cxdj',       'name': '诚信等级',   'width': 12,  'merge': False, 'align': 'center'},
-        {'id': 'score',      'name': '诚信分值',   'width': 12,  'merge': False, 'align': 'center', 'format': '0'},
+        {'id': 'score',      'name': '诚信分值',   'width': 12,  'merge': False, 'align': 'center', 'format': '0.0'},
         {'id': 'jcf',        'name': '基础分',     'width': 12,  'merge': False, 'align': 'center', 'format': '0'},
-        {'id': 'zxjf',       'name': '专项加分',   'width': 12,  'merge': False, 'align': 'center', 'format': '0'},
-        {'id': 'kf',         'name': '扣分',       'width': 12,  'merge': False, 'align': 'center', 'format': '0'},
+        {'id': 'zxjf',       'name': '专项加分',   'width': 12,  'merge': False, 'align': 'center', 'format': '0.0'},
+        {'id': 'kf',         'name': '扣分',       'width': 12,  'merge': False, 'align': 'center', 'format': '0.0'},
         {'id': 'eqlId',      'name': '资质ID',     'width': 25,  'merge': False, 'align': 'center'},
         {'id': 'orgId',      'name': '组织ID',     'width': 30,  'merge': True,  'align': 'center'},
         {'id': 'cecId',      'name': '信用档案ID', 'width': 30,  'merge': True,  'align': 'center'}
@@ -229,7 +240,7 @@ def export_to_excel(data, github_mode=False):
         main_info = {
             'cioName': item.get('cioName', ''),
             'eqtName': item.get('eqtName', ''),
-            'csf': int(float(item.get('csf', 0))),
+            'csf': float(item.get('csf', 0)),
             'orgId': item.get('orgId', ''),
             'cecId': item.get('cecId', ''),
             'zzmx': ''  # 确保zzmx字段始终存在
@@ -246,10 +257,10 @@ def export_to_excel(data, github_mode=False):
                 **main_info,
                 'zzmx': detail.get('zzmx', ''),
                 'cxdj': detail.get('cxdj', ''),
-                'score': int(float(detail.get('score', 0))),
-                'jcf': int(float(detail.get('jcf', 0))),
-                'zxjf': int(float(detail.get('zxjf', 0))),
-                'kf': int(float(detail.get('kf', 0))),
+                'score': float(detail.get('score', 0)),
+                'jcf': float(detail.get('jcf', 0)),
+                'zxjf': float(detail.get('zxjf', 0)),
+                'kf': float(detail.get('kf', 0)),
                 'eqlId': detail.get('eqlId', '')
             })
         return processed
