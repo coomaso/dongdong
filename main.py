@@ -6,7 +6,7 @@ import time
 from urllib.parse import quote
 import random
 import os
-from datetime import datetime
+from datetime import datetime, timezone, timedelta
 from openpyxl import Workbook
 from openpyxl.styles import (
     Font, Alignment, Border, Side, PatternFill, Color
@@ -176,7 +176,7 @@ def export_to_excel(data, github_mode=False):
     header_style = {
         'font': Font(bold=True, color="FFFFFF"),
         'fill': PatternFill("solid", fgColor="003366"),
-        'alignment': Alignment(horizontal="center", vertical="center"),
+        'alignment': Alignment(horizontal="center", vertical="center", wrap_text=True),  # 增加自动换行
         'border': Border(
             left=Side(style="thin"),
             right=Side(style="thin"),
@@ -184,7 +184,11 @@ def export_to_excel(data, github_mode=False):
             bottom=Side(style="thin")
         )
     }
-
+    # 新增统一单元格样式
+    cell_alignment = Alignment(
+        vertical='center',  # 强制垂直居中
+        wrap_text=True      # 允许自动换行
+    )
     cell_border = Border(
         left=Side(style="thin"),
         right=Side(style="thin"),
@@ -273,7 +277,9 @@ def export_to_excel(data, github_mode=False):
 
     # ==================== 创建主工作簿 ====================
     wb = Workbook()
-    timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+    # 手动创建 UTC+8 时区
+    utc8_offset = timezone(timedelta(hours=8))
+    timestamp = datetime.now(utc8_offset).strftime("%Y%m%d_%H%M%S")
     
     # ==================== 工作表配置 ====================
     sheet_configs = [
@@ -400,27 +406,44 @@ def export_to_excel(data, github_mode=False):
             for col_idx in range(1, len(COLUMNS)+1):
                 cell = ws.cell(row=row_idx, column=col_idx)
                 cell.border = cell_border
+                
+                # 获取列定义
                 col_def = COLUMNS[col_idx-1]
-                if col_def['align'] == 'center':
-                    cell.alignment = Alignment(horizontal='center', vertical='center')
+                
+                # 设置对齐方式
+                cell.alignment = cell_alignment.copy(
+                    horizontal=col_def['align']  # 保持原有水平对齐
+                )
+                
+                # 设置数字格式
                 if col_def.get('format'):
                     cell.number_format = col_def['format']
 
-        # ========== 合并单元格（仅汇总表）==========
-        if config["merge"]:
-            # 处理最后一组
-            if current_key:
-                end_row = len(sheet_data) + 1
-                if start_row <= end_row:
-                    merge_map[current_key] = (start_row, end_row)
-            
-            # 执行合并
-            for col in COLUMNS:
-                if col['merge']:
-                    col_letter = get_column_letter(COLUMNS.index(col)+1)
-                    for (start, end) in merge_map.values():
-                        if end > start:
-                            ws.merge_cells(f"{col_letter}{start}:{col_letter}{end}")
+            # ==================== 优化合并单元格样式 ====================
+            # 在合并单元格后增加样式重设
+            if config["merge"]:
+                for col in COLUMNS:
+                    if col['merge']:
+                        col_letter = get_column_letter(COLUMNS.index(col)+1)
+                        for (start, end) in merge_map.values():
+                            if end > start:
+                                # 获取合并区域
+                                merge_range = f"{col_letter}{start}:{col_letter}{end}"
+                                
+                                # 先取消合并（防止样式覆盖问题）
+                                ws.unmerge_cells(merge_range)
+                                
+                                # 重新合并并设置样式
+                                ws.merge_cells(merge_range)
+                                top_cell = ws[f"{col_letter}{start}"]
+                                
+                                # 同步样式到整个合并区域
+                                for row in ws[merge_range]:
+                                    for cell in row:
+                                        cell.alignment = top_cell.alignment
+                                        cell.font = top_cell.font.copy()
+                                        cell.border = top_cell.border.copy()
+                                        cell.fill = top_cell.fill.copy()
                             
 
     # ==================== 最终验证 ====================
