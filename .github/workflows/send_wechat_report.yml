@@ -3,8 +3,7 @@ name: 发送企业微信推送
 on:
   schedule:
     - cron: '30 0 * * *'  # UTC 时间每天 00:30 -> 北京时间 08:30
-  push:
-    branches: [ "main" ]
+
   workflow_dispatch:
   
 jobs:
