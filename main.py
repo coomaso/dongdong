@@ -116,12 +116,16 @@ def process_page(session: requests.Session, page: int, code: str, timestamp: str
             f"&code={quote(current_code)}&codeValue={current_timestamp}"
         )
 
+
+
+
+
         try:
             # 发送带当前参数的请求
             response = safe_request(session, page_url)
             page_response = response.json()
             status = page_response.get('code', '未知')
-            print(f"第 {page} 页 第#{attempt+1}次请求 响应状态: {status}")
+            print(f"第 {page} 页 请求#{attempt+1} 响应状态: {status}")
 
             # 空数据检查
             if "data" not in page_response or not page_response["data"]:
@@ -134,7 +138,7 @@ def process_page(session: requests.Session, page: int, code: str, timestamp: str
 
             # 数据解析
             page_data = parse_response_data(page_response["data"])
-            
+
             records = page_data.get("data", [])
             print(f"第 {page} 页解析出 {len(records)} 条记录")  # 明确记录数量
             
@@ -176,7 +180,7 @@ def export_to_excel(data, github_mode=False):
     header_style = {
         'font': Font(bold=True, color="FFFFFF"),
         'fill': PatternFill("solid", fgColor="003366"),
-        'alignment': Alignment(horizontal="center", vertical="center", wrap_text=True),  # 增加自动换行
+        'alignment': Alignment(horizontal="center", vertical="center"),
         'border': Border(
             left=Side(style="thin"),
             right=Side(style="thin"),
@@ -184,52 +188,43 @@ def export_to_excel(data, github_mode=False):
             bottom=Side(style="thin")
         )
     }
+
     cell_border = Border(
         left=Side(style="thin"),
         right=Side(style="thin"),
         top=Side(style="thin"),
         bottom=Side(style="thin")
     )
-    
-    def get_cell_alignment(horizontal='left'):
-        """动态创建对齐对象"""
-        return Alignment(
-            vertical='center',
-            horizontal=horizontal,
-            wrap_text=True
-        )
-    
     # ==================== 新增JSON生成逻辑 ====================
     def generate_top_json(sorted_data, category_name, github_mode):
         """生成前10名JSON数据"""
-        utc8_offset = timezone(timedelta(hours=8))
-        timestamp = datetime.now(utc8_offset).strftime("%Y%m%d_%H%M%S")
-        
-        data_list = []    
+        timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+        data_list = []
+
         for idx, item in enumerate(sorted_data[:10], 1):
             data_list.append({
                 "排名": idx,
                 "企业名称": item.get("cioName", ""),
                 "诚信分值": item.get("score", 0)
             })
-    
+
         if not data_list:
             print(f"警告: {category_name} 无数据，跳过JSON生成")
             return None
-    
+
         # 构建包含时间戳的结构
         top_data = {
             "TIMEamp": timestamp,
             "DATAlist": data_list
         }
-    
+
         # 构建文件名
         json_filename = f"{category_name}_top10.json"
-        
+
         if github_mode:
             output_dir = os.path.join(os.getcwd(), "excel_output")
             json_filename = os.path.join(output_dir, json_filename)
-    
+
         # 写入文件
         try:
             with open(json_filename, 'w', encoding='utf-8') as f:
@@ -245,7 +240,7 @@ def export_to_excel(data, github_mode=False):
         """强化数据处理，确保字段存在"""
         if item.get('eqtName') != '施工':
             return []
-        
+
         main_info = {
             'cioName': item.get('cioName', ''),
             'eqtName': item.get('eqtName', ''),
@@ -259,7 +254,7 @@ def export_to_excel(data, github_mode=False):
         if not details:
             # 返回带默认值的主信息
             return [main_info]
-        
+
         processed = []
         for detail in details:
             processed.append({
@@ -282,10 +277,8 @@ def export_to_excel(data, github_mode=False):
 
     # ==================== 创建主工作簿 ====================
     wb = Workbook()
-    # 手动创建 UTC+8 时区
     utc8_offset = timezone(timedelta(hours=8))
     timestamp = datetime.now(utc8_offset).strftime("%Y%m%d_%H%M%S")
-    
     # ==================== 工作表配置 ====================
     sheet_configs = [
         {
@@ -314,44 +307,44 @@ def export_to_excel(data, github_mode=False):
             "merge": False
         }
     ]
-    
+
     # ==================== 文件输出配置 ====================
     output_dir = os.getcwd()
     if github_mode:
         output_dir = os.path.join(output_dir, "excel_output")
         os.makedirs(output_dir, exist_ok=True)
-    
+
     json_files = []
-    
+
     # ==================== 构建各工作表 ====================
     # 先创建汇总表
     wb = Workbook()
     summary_sheet = wb.active
     summary_sheet.title = sheet_configs[0]["name"]
-    
+
     # 然后创建其他工作表
     for config in sheet_configs[1:]:
         ws = wb.create_sheet(title=config["name"])
         print(f"已创建工作表: {ws.title}")  # 调试日志
 
-    # ==================== 填充每个工作表 ====================
+    # ==================== 填充各工作表 ====================
     for config in sheet_configs:
         # 获取工作表对象
         if config["name"] == "企业信用数据汇总":
             ws = summary_sheet
         else:
             ws = wb[config["name"]]
-        
+
         print(f"\n正在处理工作表: {ws.title}")  # 调试日志
-        
+
         # 设置冻结窗格
         ws.freeze_panes = config["freeze"]
-        
+
         # ========== 写入表头 ==========
         headers = [col['name'] for col in COLUMNS]
         ws.append(headers)
         print(f"表头写入完成，行数: {ws.max_row}")  # 调试日志
-        
+
         # 应用表头样式
         for col_idx, col in enumerate(COLUMNS, 1):
             cell = ws.cell(row=1, column=col_idx)
@@ -388,12 +381,12 @@ def export_to_excel(data, github_mode=False):
         # ==========合并单元格逻辑（仅汇总表）==========
         current_key = None
         start_row = 2
-        
+
         for row_idx, row_data in enumerate(sheet_data, 2):
             # 调试：打印前3行数据
             if row_idx <= 4:
-                print(f"写入行 {row_idx} 数据: {row_data['zzmx'][:30]}...")
-                
+                print(f"写入行 {row_idx} 数据: {row_data['zzmx'][:20]}...")
+
             # 企业信用数据汇总需要合并单元格
             if config["merge"]:
                 unique_key = f"{row_data['orgId']}-{row_data['cecId']}"
@@ -402,58 +395,50 @@ def export_to_excel(data, github_mode=False):
                         merge_map[current_key] = (start_row, row_idx-1)
                     current_key = unique_key
                     start_row = row_idx
-            
+
             # 写入行数据
             row = [row_data.get(col['id'], '') for col in COLUMNS]
             ws.append(row)
-            
+
             # 设置单元格样式
             for col_idx in range(1, len(COLUMNS)+1):
                 cell = ws.cell(row=row_idx, column=col_idx)
                 cell.border = cell_border
-                
-                # 获取列定义
                 col_def = COLUMNS[col_idx-1]
-                
-                # 设置对齐方式
-                cell.alignment = get_cell_alignment(col_def['align'])
-                
-                # 设置数字格式
+                if col_def['align'] == 'center':
+                    cell.alignment = Alignment(horizontal='center', vertical='center')
                 if col_def.get('format'):
                     cell.number_format = col_def['format']
 
-            # ==================== 优化合并单元格样式 ====================
-            # 在合并单元格后增加样式重设
-            if config["merge"]:
-                if current_key:
-                    end_row = len(sheet_data) + 1
+        # ========== 合并单元格（仅汇总表）==========
+        if config["merge"]:
+            # 处理最后一组
+            if current_key:
+                end_row = len(sheet_data) + 1
+                if start_row <= end_row:
                     merge_map[current_key] = (start_row, end_row)
-                
-                for col in COLUMNS:
-                    if col['merge']:
-                        col_letter = get_column_letter(COLUMNS.index(col)+1)
-                        for (start, end) in merge_map.values():
-                            if end > start:
-                                merge_range = f"{col_letter}{start}:{col_letter}{end}"
-                                ws.merge_cells(merge_range)
-                                # 同步合并区域样式
-                                for row in ws[merge_range]:
-                                    for cell in row:
-                                        cell.alignment = get_cell_alignment(col['align'])
-                            
+
+            # 执行合并
+            for col in COLUMNS:
+                if col['merge']:
+                    col_letter = get_column_letter(COLUMNS.index(col)+1)
+                    for (start, end) in merge_map.values():
+                        if end > start:
+                            ws.merge_cells(f"{col_letter}{start}:{col_letter}{end}")
+
 
     # ==================== 最终验证 ====================
     print("\n最终工作表列表:")
     for sheet in wb.sheetnames:
         print(f"- {sheet}")
-        
+
     print(f"\n各工作表数据量:")
     for sheet in wb.worksheets:
         print(f"{sheet.title}: {sheet.max_row-1} 行")  # 减去表头
 
     # ==================== 文件保存 ====================
     filename = f"宜昌市信用评价信息_{timestamp}.xlsx" if github_mode else "宜昌市信用评价信息.xlsx"
-    
+
     if github_mode:
         output_dir = os.path.join(os.getcwd(), "excel_output")
         # 确保目录创建成功
@@ -463,7 +448,7 @@ def export_to_excel(data, github_mode=False):
         except Exception as e:
             print(f"目录创建失败: {str(e)}")
             raise
-        
+
         filename = os.path.join(output_dir, filename)
         print(f"最终保存路径: {filename}")  # 路径调试
 
@@ -471,13 +456,13 @@ def export_to_excel(data, github_mode=False):
         # 删除默认创建的空白工作表
         if "Sheet" in wb.sheetnames:
             del wb["Sheet"]
-            
+
         wb.save(filename)
         print(f"文件已保存至：{os.path.abspath(filename)}")
         print("包含的工作表:")
         for sheet in wb.sheetnames:
             print(f"- {sheet}")
-            
+
         return {
             "excel": filename,
             "json": json_files
@@ -487,7 +472,7 @@ def export_to_excel(data, github_mode=False):
         import traceback
         traceback.print_exc()
         return None
-        
+
 def main():
     print("=== 启动数据获取程序 ===")
     session = requests.Session()
@@ -518,7 +503,7 @@ def main():
                 try:
                     print(f"\n[处理中] 第 {page} 页 (重试次数: {retry_count})")
                     page_data, _ = process_page(session, page, current_code, current_ts)
-                    
+
                     if page_data:
                         print(f"[成功获取数据] 第 {page} 页 {len(page_data)} 条记录")
                         all_data.extend(page_data)
@@ -546,7 +531,7 @@ def main():
 
         print(f"\n=== 数据获取完成 ===")
         print(f"总获取记录数: {len(all_data)}")
-        
+
         # 导出数据前再次检查
         if all_data:
             saved_path = export_to_excel(all_data, github_mode=True)
