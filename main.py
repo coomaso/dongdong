@@ -121,7 +121,7 @@ def process_page(session: requests.Session, page: int, code: str, timestamp: str
             response = safe_request(session, page_url)
             page_response = response.json()
             status = page_response.get('code', '未知')
-            print(f"第 {page} 页 请求#{attempt+1} 响应状态: {status}")
+            print(f"第 {page} 页 第#{attempt+1}次请求 响应状态: {status}")
 
             # 空数据检查
             if "data" not in page_response or not page_response["data"]:
