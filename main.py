@@ -400,13 +400,19 @@ def export_to_excel(data, github_mode=False):
             row = [row_data.get(col['id'], '') for col in COLUMNS]
             ws.append(row)
 
-            # 设置单元格样式
+            # ========== 设置数据单元格样式 ==========
             for col_idx in range(1, len(COLUMNS)+1):
                 cell = ws.cell(row=row_idx, column=col_idx)
                 cell.border = cell_border
                 col_def = COLUMNS[col_idx-1]
-                if col_def['align'] == 'center':
-                    cell.alignment = Alignment(horizontal='center', vertical='center')
+                
+                # 修改点：始终设置垂直居中，保留原有水平对齐设置
+                cell.alignment = Alignment(
+                    horizontal=col_def['align'],  # 保留列定义的水平对齐方式
+                    vertical='center',           # 新增垂直居中设置
+                    wrap_text=True               # 可选：自动换行
+                )
+                
                 if col_def.get('format'):
                     cell.number_format = col_def['format']
 
