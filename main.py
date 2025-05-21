@@ -116,10 +116,6 @@ def process_page(session: requests.Session, page: int, code: str, timestamp: str
             f"&code={quote(current_code)}&codeValue={current_timestamp}"
         )
 
-
-
-
-
         try:
             # 发送带当前参数的请求
             response = safe_request(session, page_url)
@@ -410,7 +406,7 @@ def export_to_excel(data, github_mode=False):
                 cell.alignment = Alignment(
                     horizontal=col_def['align'],  # 保留列定义的水平对齐方式
                     vertical='center',           # 新增垂直居中设置
-                    wrap_text=True               # 可选：自动换行
+                    wrap_text=False               # 可选：自动换行 True
                 )
                 
                 if col_def.get('format'):
