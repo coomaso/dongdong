@@ -2,7 +2,7 @@ name: 发送企业微信推送
 
 on:
   schedule:
-    - cron: '0 1 * * *'  # UTC 时间每天 01:00 -> 北京时间 09:00
+    - cron: '0 1 * * 1-6'  # UTC 时间每周一~六 01:00 -> 北京时间 09:00
 
   workflow_dispatch:
   
