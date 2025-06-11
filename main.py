@@ -302,6 +302,12 @@ def export_to_excel(data, github_mode=False):
             "freeze": 'B2',
             "merge": False
         }
+        {
+            "name": "水利水电工程信用分排序",
+            "prefix": "建筑业企业资质_施工总承包_水利水电工程_",
+            "freeze": 'B2',
+            "merge": False
+        }
     ]
 
     # ==================== 文件输出配置 ====================
