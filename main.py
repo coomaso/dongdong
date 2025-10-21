@@ -313,6 +313,18 @@ def export_to_excel(data, github_mode=False):
             "prefix": "建筑业企业资质_施工总承包_电力工程_",
             "freeze": 'B2',
             "merge": False
+        },
+        {
+            "name": "幕墙工程信用分排序",
+            "prefix": "建筑业企业资质_专业承包_建筑幕墙工程_",
+            "freeze": 'B2',
+            "merge": False
+        },
+        {
+            "name": "钢结构工程信用分排序",
+            "prefix": "施工企业_专业承包_钢结构工程_",
+            "freeze": 'B2',
+            "merge": False
         }
     ]
 
