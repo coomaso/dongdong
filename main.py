@@ -3,6 +3,7 @@ import json
 import os
 import random
 import time
+import logging
 from datetime import datetime, timezone, timedelta
 from typing import Dict, List, Optional, Tuple, Any, Union
 from urllib.parse import quote
@@ -13,6 +14,8 @@ from openpyxl import Workbook
 from openpyxl.styles import Font, Alignment, Border, Side, PatternFill
 from openpyxl.utils import get_column_letter
 
+# 配置日志（可根据需要调整级别）
+logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')
 
 # ==================== 配置常量 ====================
 class Config:
@@ -311,6 +314,21 @@ def export_to_excel(data: List[dict], session: requests.Session, github_mode: bo
         if isinstance(item, dict):
             processed_data.extend(process_item(item))
 
+    # 构建企业所有资质分值映射（用于信誉明细表）
+    cec_to_all_qual_scores = {}
+    for record in processed_data:
+        cec_id = record.get('cecId')
+        if not cec_id:
+            continue
+        qual_name = record.get('zzmx', '')
+        if not qual_name:
+            continue
+        score = record.get('score', 0)
+        if cec_id not in cec_to_all_qual_scores:
+            cec_to_all_qual_scores[cec_id] = {}
+        if qual_name not in cec_to_all_qual_scores[cec_id] or score > cec_to_all_qual_scores[cec_id][qual_name]:
+            cec_to_all_qual_scores[cec_id][qual_name] = score
+
     # -------------------- 创建工作簿 --------------------
     wb = Workbook()
     utc8_offset = timezone(timedelta(hours=8))
@@ -446,7 +464,7 @@ def export_to_excel(data: List[dict], session: requests.Session, github_mode: bo
         del wb["Sheet"]
 
     # 保存主文件
-    filename = f"宜昌市信用评价信息_{timestamp}.xlsx" if github_mode else "宜昌市信用评价信息.xlsx"
+    filename = f"宜昌市信用信息汇总.xlsx" if github_mode else "宜昌市信用信息汇总.xlsx"
     if github_mode:
         filename = os.path.join(output_dir, filename)
     try:
@@ -461,33 +479,27 @@ def export_to_excel(data: List[dict], session: requests.Session, github_mode: bo
         traceback.print_exc()
         return {"excel": None, "json": []}
 
-    # -------------------- 生成信誉分明细表 --------------------
+    # -------------------- 生成信誉分明细表（优化版） --------------------
     print("\n=== 开始生成信誉分明细表（按资质类型精确匹配分值≥110） ===")
     try:
-        cec_to_exact_qual_scores = {}
+        # 构建有高分资质的企业集合
+        high_score_cec_ids = set()
         cec_to_name = {}
         for record in processed_data:
             cec_id = record.get('cecId')
             if not cec_id:
                 continue
             score = record.get('score', 0)
-            if score < 110:
-                continue
-            qual_name = record.get('zzmx', '')
-            if not qual_name:
-                continue
-            company_name = record.get('cioName', '')
-            if cec_id not in cec_to_exact_qual_scores:
-                cec_to_exact_qual_scores[cec_id] = {}
-                cec_to_name[cec_id] = company_name
-            if qual_name not in cec_to_exact_qual_scores[cec_id] or score > cec_to_exact_qual_scores[cec_id][qual_name]:
-                cec_to_exact_qual_scores[cec_id][qual_name] = score
+            if score >= 110:
+                high_score_cec_ids.add(cec_id)
+                if cec_id not in cec_to_name:
+                    cec_to_name[cec_id] = record.get('cioName', '')
 
-        if not cec_to_exact_qual_scores:
+        if not high_score_cec_ids:
             print("没有诚信分值≥110的企业，跳过信誉分明细表生成。")
         else:
-            # 获取明细
-            for cec_id in cec_to_exact_qual_scores.keys():
+            # 获取明细（仅对有高分资质的企业获取）
+            for cec_id in high_score_cec_ids:
                 if cec_id not in detail_cache:
                     time.sleep(random.uniform(5, 15))
                     company_name = cec_to_name.get(cec_id, '')
@@ -517,21 +529,37 @@ def export_to_excel(data: List[dict], session: requests.Session, github_mode: bo
             good_sheet = detail_wb.create_sheet("良好行为")
             good_sheet.append(good_headers)
 
+            # 统计信息
+            skipped_bad_count = 0
+            skipped_good_count = 0
+            warned_bad_count = 0
+            warned_good_count = 0
+
             # 填充数据
-            for cec_id, qual_scores in cec_to_exact_qual_scores.items():
+            for cec_id in high_score_cec_ids:
                 detail = detail_cache.get(cec_id)
                 if not detail:
                     continue
                 company_name = cec_to_name.get(cec_id, '')
 
+                # 获取该企业所有资质分值映射
+                all_qual_scores = cec_to_all_qual_scores.get(cec_id, {})
+
+                # 处理不良行为
                 for bl in detail.get('blxwArray', []):
                     qual_type = bl.get('kfqyzz', '')
                     if not qual_type:
                         continue
-                    matched_score = qual_scores.get(qual_type)
-                    if matched_score is None:
-                        print(f"警告: 企业 {company_name} 不良行为关联资质 '{qual_type}' 未精确匹配到分值≥110的资质，跳过该行为。")
+                    # 获取该资质对应的实际分值（可能<110）
+                    matched_score = all_qual_scores.get(qual_type, 0)
+                    if matched_score == 0:
+                        # 资质未在企业数据中找到，可能数据不一致，跳过
+                        skipped_bad_count += 1
+                        logging.debug(f"企业 {company_name} 不良行为关联资质 '{qual_type}' 未在数据中找到，跳过。")
                         continue
+                    if matched_score < 110:
+                        warned_bad_count += 1
+                        logging.warning(f"企业 {company_name} 不良行为关联资质 '{qual_type}' 分值为 {matched_score} (<110)，但企业有其他高分资质，已记录该行为。")
                     bad_sheet.append([
                         company_name, matched_score,
                         bl.get('cfry', ''), bl.get('cfryCertNum', ''), bl.get('reason', ''),
@@ -540,14 +568,19 @@ def export_to_excel(data: List[dict], session: requests.Session, github_mode: bo
                         bl.get('realValue', 0), bl.get('kftzsbh', '')
                     ])
 
+                # 处理良好行为
                 for lh in detail.get('lhxwArray', []):
                     qual_type = lh.get('jfqyzz', '')
                     if not qual_type:
                         continue
-                    matched_score = qual_scores.get(qual_type)
-                    if matched_score is None:
-                        print(f"警告: 企业 {company_name} 良好行为关联资质 '{qual_type}' 未精确匹配到分值≥110的资质，跳过该行为。")
+                    matched_score = all_qual_scores.get(qual_type, 0)
+                    if matched_score == 0:
+                        skipped_good_count += 1
+                        logging.debug(f"企业 {company_name} 良好行为关联资质 '{qual_type}' 未在数据中找到，跳过。")
                         continue
+                    if matched_score < 110:
+                        warned_good_count += 1
+                        logging.warning(f"企业 {company_name} 良好行为关联资质 '{qual_type}' 分值为 {matched_score} (<110)，但企业有其他高分资质，已记录该行为。")
                     proj_name = lh.get('engName', '') or lh.get('hjyy', '')
                     good_sheet.append([
                         company_name, matched_score,
@@ -555,6 +588,16 @@ def export_to_excel(data: List[dict], session: requests.Session, github_mode: bo
                         lh.get('bzXwlb', ''), lh.get('beginDate', ''), lh.get('endDate', ''),
                         lh.get('valid', ''), lh.get('realValue', 0), lh.get('documentNumber', '')
                     ])
+
+            # 输出统计信息
+            if skipped_bad_count > 0:
+                logging.info(f"共跳过 {skipped_bad_count} 条不良行为（资质未在企业数据中找到）")
+            if skipped_good_count > 0:
+                logging.info(f"共跳过 {skipped_good_count} 条良好行为（资质未在企业数据中找到）")
+            if warned_bad_count > 0:
+                logging.info(f"已记录 {warned_bad_count} 条不良行为（关联资质分值<110，但企业有高分资质）")
+            if warned_good_count > 0:
+                logging.info(f"已记录 {warned_good_count} 条良好行为（关联资质分值<110，但企业有高分资质）")
 
             # 应用样式
             header_fill = PatternFill("solid", fgColor="003366")
@@ -594,7 +637,7 @@ def export_to_excel(data: List[dict], session: requests.Session, github_mode: bo
                     sheet.column_dimensions[col_letter].width = adjusted_width
 
             # 保存明细表
-            detail_filename = f"信誉分明细表_{timestamp}.xlsx"
+            detail_filename = f"信誉分明细表.xlsx"
             if github_mode:
                 detail_filename = os.path.join(output_dir, detail_filename)
             else:
