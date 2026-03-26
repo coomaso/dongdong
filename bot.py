@@ -22,9 +22,9 @@ def get_key_from_webhook(url):
 def send_text_msg(title, data_list):
     content = f"## 🏆 {title}\n\n"
     for item in data_list:
-        name = item['企业名称']
-        score = item['诚信分值']
-        rank = item['排名']
+        name = item.get('企业名称', item.get('name', ''))
+        score = item.get('诚信分值', item.get('score', ''))
+        rank = item.get('排名', item.get('rank', ''))
         if "盛荣" in name:
             line = f'> **<font color="red">{rank}. {name} {score}</font>**\n'
         else:
@@ -42,7 +42,6 @@ def send_text_msg(title, data_list):
 # ======= 主函数 =======
 def main():
     output_dir = "excel_output"
-    # 指定文件名
     filename = "建筑工程总承包信用分排序_top10.json"
     filepath = os.path.join(output_dir, filename)
 
@@ -53,20 +52,35 @@ def main():
     with open(filepath, "r", encoding="utf-8") as f:
         json_data = json.load(f)
 
-    timestamp_raw = json_data.get("TIMEamp", None)
-    if timestamp_raw:
-        dt = datetime.strptime(timestamp_raw, "%Y%m%d_%H%M%S")
-        dt_bj = dt + timedelta(hours=8)  # 转北京时间
-        timestamp = dt_bj.strftime("%Y-%m-%d")
+    # 根据数据类型处理
+    if isinstance(json_data, dict):
+        timestamp_raw = json_data.get("TIMEamp", None)
+        data_list = json_data.get("DATAlist", [])
+        if not data_list:
+            print("JSON 内容为空或格式不正确")
+            return
+    elif isinstance(json_data, list):
+        data_list = json_data
+        timestamp_raw = None
     else:
-        timestamp = "未知时间"
+        print("JSON 格式不支持")
+        return
+
+    # 处理时间戳
+    if timestamp_raw:
+        try:
+            dt = datetime.strptime(timestamp_raw, "%Y%m%d_%H%M%S")
+            dt_bj = dt + timedelta(hours=8)  # 转北京时间
+            timestamp = dt_bj.strftime("%Y-%m-%d")
+        except ValueError:
+            timestamp = "未知时间"
+    else:
+        # 使用文件修改时间作为时间戳
+        mtime = os.path.getmtime(filepath)
+        dt = datetime.fromtimestamp(mtime)
+        timestamp = dt.strftime("%Y-%m-%d")
 
     title = f"宜昌施工总承包诚信分 Top10 {timestamp}"
-    data_list = json_data.get("DATAlist")
-
-    if not data_list:
-        print("JSON 内容为空或格式不正确")
-        return
 
     # 发送文本消息
     send_text_msg(title, data_list)
