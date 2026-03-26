@@ -41,10 +41,7 @@ def send_text_msg(title, data_list):
 
 # ======= 主函数 =======
 def main():
-    output_dir = "excel_output"
-    filename = "建筑工程总承包信用分排序_top10.json"
-    filepath = os.path.join(output_dir, filename)
-
+    filepath = "excel_output/建筑工程总承包信用分排序_top10.json"
     if not os.path.isfile(filepath):
         print(f"❌ 文件不存在：{filepath}")
         return
@@ -52,7 +49,7 @@ def main():
     with open(filepath, "r", encoding="utf-8") as f:
         json_data = json.load(f)
 
-    # 根据数据类型处理
+    # 修正类型判断
     if isinstance(json_data, dict):
         timestamp_raw = json_data.get("TIMEamp", None)
         data_list = json_data.get("DATAlist", [])
@@ -75,14 +72,12 @@ def main():
         except ValueError:
             timestamp = "未知时间"
     else:
-        # 使用文件修改时间作为时间戳
         mtime = os.path.getmtime(filepath)
         dt = datetime.fromtimestamp(mtime)
         timestamp = dt.strftime("%Y-%m-%d")
 
     title = f"宜昌施工总承包诚信分 Top10 {timestamp}"
 
-    # 发送文本消息
     send_text_msg(title, data_list)
 
 if __name__ == "__main__":
