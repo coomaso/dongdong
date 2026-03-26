@@ -4,7 +4,8 @@ on:
   schedule:
     - cron: '30 23 * * 0-5'  # UTC 时间每周一~六 01:00 -> 北京时间 09:00
 
-  workflow_dispatch:
+  push:
+    branches: [ "main" ]  # 仅在推送到 main 分支时执行
   
 jobs:
   send_report:
