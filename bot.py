@@ -1,7 +1,6 @@
 import os
 import json
 import requests
-from glob import glob
 from datetime import datetime, timedelta
 import urllib.parse
 
@@ -18,13 +17,6 @@ def get_key_from_webhook(url):
     if not key:
         raise ValueError("无法从 WEBHOOK_URL 中提取 key")
     return key
-
-# ======= 获取最新的文件路径 =======
-def get_latest_file(directory, pattern):
-    files = glob(os.path.join(directory, pattern))
-    if not files:
-        return None
-    return max(files, key=os.path.getmtime)
 
 # ======= 发送文本消息，企业名包含“盛荣”则红色高亮 =======
 def send_text_msg(title, data_list):
@@ -47,42 +39,18 @@ def send_text_msg(title, data_list):
     r.raise_for_status()
     print("✅ 文本消息已发送")
 
-# ======= 上传文件到企业微信并发送 =======
-def send_file_msg(filepath):
-    filename = os.path.basename(filepath)
-    key = get_key_from_webhook(WEBHOOK_URL)
-    upload_url = f"https://qyapi.weixin.qq.com/cgi-bin/webhook/upload_media?key={key}&type=file"
-
-    with open(filepath, 'rb') as f:
-        files = {'file': (filename, f, 'application/octet-stream')}
-        res = requests.post(upload_url, files=files)
-    res.raise_for_status()
-    res_json = res.json()
-
-    media_id = res_json.get("media_id")
-    if not media_id:
-        print(f"❌ 上传文件失败：{res.text}")
-        return
-
-    payload = {
-        "msgtype": "file",
-        "file": {"media_id": media_id}
-    }
-    r = requests.post(WEBHOOK_URL, json=payload)
-    r.raise_for_status()
-    print(f"✅ 文件已发送: {filename}")
-
 # ======= 主函数 =======
 def main():
     output_dir = "excel_output"
+    # 指定文件名
+    filename = "建筑工程总承包信用分排序_top10.json"
+    filepath = os.path.join(output_dir, filename)
 
-    # 获取最新 JSON 文件
-    json_file = get_latest_file(output_dir, "*.json")
-    if not json_file:
-        print("未找到 JSON 文件")
+    if not os.path.isfile(filepath):
+        print(f"❌ 文件不存在：{filepath}")
         return
 
-    with open(json_file, "r", encoding="utf-8") as f:
+    with open(filepath, "r", encoding="utf-8") as f:
         json_data = json.load(f)
 
     timestamp_raw = json_data.get("TIMEamp", None)
@@ -102,11 +70,6 @@ def main():
 
     # 发送文本消息
     send_text_msg(title, data_list)
-
-    # 发送最新的 XLSX 文件
-    filepath = get_latest_file(output_dir, "*.xlsx")
-    if filepath:
-        send_file_msg(filepath)
 
 if __name__ == "__main__":
     main()
