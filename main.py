@@ -62,10 +62,10 @@ class Config:
     SHEET_CONFIGS = [
         {"name": "企业信用数据汇总", "prefix": None, "freeze": 'B2', "merge": True},
         {"name": "建筑工程总承包信用分排序", "prefix": "建筑业企业资质_施工总承包_建筑工程_", "freeze": 'B2', "merge": False, "generate_json": True},
-        {"name": "市政公用工程信用分排序", "prefix": "建筑业企业资质_施工总承包_市政公用工程_", "freeze": 'B2', "merge": False, "generate_json": True},
-        {"name": "装修装饰工程信用分排序", "prefix": "建筑业企业资质_专业承包_建筑装修装饰工程_", "freeze": 'B2', "merge": False, "generate_json": True},
-        {"name": "水利水电工程信用分排序", "prefix": "建筑业企业资质_施工总承包_水利水电工程_", "freeze": 'B2', "merge": False, "generate_json": True},
-        {"name": "电力工程信用分排序", "prefix": "建筑业企业资质_施工总承包_电力工程_", "freeze": 'B2', "merge": False, "generate_json": True}
+        {"name": "市政公用工程信用分排序", "prefix": "建筑业企业资质_施工总承包_市政公用工程_", "freeze": 'B2', "merge": False},
+        {"name": "装修装饰工程信用分排序", "prefix": "建筑业企业资质_专业承包_建筑装修装饰工程_", "freeze": 'B2', "merge": False},
+        {"name": "水利水电工程信用分排序", "prefix": "建筑业企业资质_施工总承包_水利水电工程_", "freeze": 'B2', "merge": False},
+        {"name": "电力工程信用分排序", "prefix": "建筑业企业资质_施工总承包_电力工程_", "freeze": 'B2', "merge": False}
     ]
 
 
