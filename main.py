@@ -229,7 +229,7 @@ def fetch_company_details_with_cache(session: requests.Session, cec_id: str, com
 
 
 def append_top_json(sorted_data: List[dict], category_name: str, github_mode: bool = False) -> Optional[str]:
-    """追加数据到当天的JSON文件"""
+    """保存当天数据到JSON文件（每次覆盖，不追加）"""
     utc8_offset = timezone(timedelta(hours=8))
     now = datetime.now(utc8_offset)
     date_str = now.strftime("%Y%m%d")
@@ -260,25 +260,14 @@ def append_top_json(sorted_data: List[dict], category_name: str, github_mode: bo
         "DATAlist": data_list
     }
 
-    if os.path.exists(json_path):
-        try:
-            with open(json_path, 'r', encoding='utf-8') as f:
-                existing_data = json.load(f)
-            if not isinstance(existing_data, list):
-                existing_data = [existing_data]
-            existing_data.append(update_data)
-        except:
-            existing_data = [update_data]
-    else:
-        existing_data = [update_data]
-
+    # 直接写入当前数据，不保留历史
     try:
         with open(json_path, 'w', encoding='utf-8') as f:
-            json.dump(existing_data, f, ensure_ascii=False, indent=2)
-        print(f"已追加数据到JSON文件: {os.path.abspath(json_path)}")
+            json.dump(update_data, f, ensure_ascii=False, indent=2)
+        print(f"已保存数据到JSON文件: {os.path.abspath(json_path)}")
         return json_path
     except Exception as e:
-        print(f"JSON文件追加失败: {str(e)}")
+        print(f"JSON文件保存失败: {str(e)}")
         return None
 
 
