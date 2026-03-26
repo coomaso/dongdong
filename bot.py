@@ -1,6 +1,7 @@
 import os
 import json
 import requests
+from glob import glob
 from datetime import datetime, timedelta
 import urllib.parse
 
@@ -18,13 +19,20 @@ def get_key_from_webhook(url):
         raise ValueError("无法从 WEBHOOK_URL 中提取 key")
     return key
 
+# ======= 获取最新的文件路径 =======
+def get_latest_file(directory, pattern):
+    files = glob(os.path.join(directory, pattern))
+    if not files:
+        return None
+    return max(files, key=os.path.getmtime)
+
 # ======= 发送文本消息，企业名包含“盛荣”则红色高亮 =======
 def send_text_msg(title, data_list):
     content = f"## 🏆 {title}\n\n"
     for item in data_list:
-        name = item.get('企业名称', item.get('name', ''))
-        score = item.get('诚信分值', item.get('score', ''))
-        rank = item.get('排名', item.get('rank', ''))
+        name = item['企业名称']
+        score = item['诚信分值']
+        rank = item['排名']
         if "盛荣" in name:
             line = f'> **<font color="red">{rank}. {name} {score}</font>**\n'
         else:
@@ -39,46 +47,66 @@ def send_text_msg(title, data_list):
     r.raise_for_status()
     print("✅ 文本消息已发送")
 
+# ======= 上传文件到企业微信并发送 =======
+def send_file_msg(filepath):
+    filename = os.path.basename(filepath)
+    key = get_key_from_webhook(WEBHOOK_URL)
+    upload_url = f"https://qyapi.weixin.qq.com/cgi-bin/webhook/upload_media?key={key}&type=file"
+
+    with open(filepath, 'rb') as f:
+        files = {'file': (filename, f, 'application/octet-stream')}
+        res = requests.post(upload_url, files=files)
+    res.raise_for_status()
+    res_json = res.json()
+
+    media_id = res_json.get("media_id")
+    if not media_id:
+        print(f"❌ 上传文件失败：{res.text}")
+        return
+
+    payload = {
+        "msgtype": "file",
+        "file": {"media_id": media_id}
+    }
+    r = requests.post(WEBHOOK_URL, json=payload)
+    r.raise_for_status()
+    print(f"✅ 文件已发送: {filename}")
+
 # ======= 主函数 =======
 def main():
-    filepath = "excel_output/建筑工程总承包信用分排序_top10.json"
-    if not os.path.isfile(filepath):
-        print(f"❌ 文件不存在：{filepath}")
+    output_dir = "excel_output"
+
+    # 获取最新 JSON 文件
+    json_file = get_latest_file(output_dir, "*.json")
+    if not json_file:
+        print("未找到 JSON 文件")
         return
 
-    with open(filepath, "r", encoding="utf-8") as f:
+    with open(json_file, "r", encoding="utf-8") as f:
         json_data = json.load(f)
 
-    # 修正类型判断
-    if isinstance(json_data, dict):
-        timestamp_raw = json_data.get("TIMEamp", None)
-        data_list = json_data.get("DATAlist", [])
-        if not data_list:
-            print("JSON 内容为空或格式不正确")
-            return
-    elif isinstance(json_data, list):
-        data_list = json_data
-        timestamp_raw = None
-    else:
-        print("JSON 格式不支持")
-        return
-
-    # 处理时间戳
+    timestamp_raw = json_data.get("TIMEamp", None)
     if timestamp_raw:
-        try:
-            dt = datetime.strptime(timestamp_raw, "%Y%m%d_%H%M%S")
-            dt_bj = dt + timedelta(hours=8)  # 转北京时间
-            timestamp = dt_bj.strftime("%Y-%m-%d")
-        except ValueError:
-            timestamp = "未知时间"
+        dt = datetime.strptime(timestamp_raw, "%Y%m%d_%H%M%S")
+        dt_bj = dt + timedelta(hours=8)  # 转北京时间
+        timestamp = dt_bj.strftime("%Y-%m-%d")
     else:
-        mtime = os.path.getmtime(filepath)
-        dt = datetime.fromtimestamp(mtime)
-        timestamp = dt.strftime("%Y-%m-%d")
+        timestamp = "未知时间"
 
     title = f"宜昌施工总承包诚信分 Top10 {timestamp}"
+    data_list = json_data.get("DATAlist")
 
+    if not data_list:
+        print("JSON 内容为空或格式不正确")
+        return
+
+    # 发送文本消息
     send_text_msg(title, data_list)
+
+    # 发送最新的 XLSX 文件
+    filepath = get_latest_file(output_dir, "*.xlsx")
+    if filepath:
+        send_file_msg(filepath)
 
 if __name__ == "__main__":
     main()
