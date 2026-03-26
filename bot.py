@@ -76,7 +76,7 @@ def send_file_msg(filepath):
 def main():
     output_dir = "excel_output"
 
-    # 获取最新 JSON 文件
+    # 1. 处理 JSON：获取最新文件并发送文本消息
     json_file = get_latest_file(output_dir, "*.json")
     if not json_file:
         print("未找到 JSON 文件")
@@ -100,12 +100,19 @@ def main():
         print("JSON 内容为空或格式不正确")
         return
 
+    # 可选：按诚信分值降序排序（确保顺序）
+    data_list.sort(key=lambda x: x.get("诚信分值", 0), reverse=True)
+
     # 发送文本消息
     send_text_msg(title, data_list)
 
-    # 发送最新的 XLSX 文件
-    filepath = get_latest_file(output_dir, "*.xlsx")
-    if filepath:
+    # 2. 发送所有 XLSX 文件
+    all_xlsx = glob(os.path.join(output_dir, "*.xlsx"))
+    if not all_xlsx:
+        print("未找到 XLSX 文件")
+        return
+
+    for filepath in all_xlsx:
         send_file_msg(filepath)
 
 if __name__ == "__main__":
